@@ -1,0 +1,11 @@
+terraform.d
+terraform/.terraform.lock.hcl
+terraform/.terraform/
+terraform/terraform.tfstate*
+vendor
+.DS_Store
+.vscode
+terraform/
+vendor/
+# Added by goreleaser init:
+dist/
