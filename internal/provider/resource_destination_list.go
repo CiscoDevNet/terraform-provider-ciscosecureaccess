@@ -58,8 +58,14 @@ type destinationListResourceModel struct {
 // GetDestinations retrieves destinations for a destination list
 func (r *destinationListResourceModel) GetDestinations(ctx context.Context, client *destinationlists.APIClient) ([]destinationModel, error) {
 	destinationsResp, httpRes, err := client.DestinationsAPI.GetDestinations(ctx, r.Id.ValueInt64()).Execute()
+	if err != nil {
+		return nil, fmt.Errorf("error code %s reading destinations for destination list %s: %w", httpRes.Status, r.Name.ValueString(), err)
+	}
 
-	destsDebug, _ := json.Marshal(destinationsResp.Data)
+	destsDebug, err := json.Marshal(destinationsResp.Data)
+	if err != nil {
+		return nil, fmt.Errorf("error code %s reading destinations for destination list %s: %w", httpRes.Status, r.Name.ValueString(), err)
+	}
 	tflog.Debug(ctx, "Retrieved destinations for destination list", map[string]interface{}{
 		"destination_list_id": r.Id.ValueInt64(),
 		"destinations":        string(destsDebug),
@@ -129,9 +135,6 @@ func (d destinationModel) DestinationAttributesNested() map[string]schema.Attrib
 		"id": schema.StringAttribute{
 			Description: "Unique identifier for destination",
 			Computed:    true,
-			PlanModifiers: []planmodifier.String{
-				stringplanmodifier.UseStateForUnknown(),
-			},
 		},
 		"destination": schema.StringAttribute{
 			Description: "A domain, URL, or IP.",
@@ -281,6 +284,13 @@ func (r *destinationListResource) Read(ctx context.Context, req resource.ReadReq
 	// Read API call logic
 	destinationListResp, httpRes, err := r.client.DestinationListsAPI.GetDestinationList(ctx, data.Id.ValueInt64()).Execute()
 	if err != nil {
+		if httpRes.Body == nil {
+			resp.Diagnostics.AddError(
+				"Error reading response body",
+				fmt.Sprintf("Error reading destination list %s response: %s", data.Name.ValueString(), err))
+			return
+		}
+
 		// Handle "200 Not Found" from Destination Lists API
 		bodyBytes, readErr := io.ReadAll(httpRes.Body)
 		httpRes.Body.Close()
@@ -336,6 +346,7 @@ func (r *destinationListResource) Read(ctx context.Context, req resource.ReadReq
 	tflog.Debug(ctx, "Read destination list state", map[string]interface{}{
 		"destination_list_id":   data.Id.ValueInt64(),
 		"destination_list_name": data.Name.ValueString(),
+		"destinations":          data.Destinations.String(),
 	})
 
 	// Save updated data into Terraform state
@@ -363,6 +374,7 @@ func (r *destinationListResource) Update(ctx context.Context, req resource.Updat
 			)
 			return
 		}
+		state.Name = plan.Name
 	}
 
 	// Get current destinations
@@ -390,7 +402,10 @@ func (r *destinationListResource) Update(ctx context.Context, req resource.Updat
 
 		reconciled := false
 		for i := range readDestinations {
-			if readDestinations[i].Id == planDestinationList[j].Id {
+			if readDestinations[i].Destination == planDestinationList[j].Destination {
+				tflog.Debug(ctx, "Destination found", map[string]interface{}{
+					"destination": readDestinations[i].Destination.ValueString(),
+				})
 				reconciled = true
 				break
 			}
@@ -402,11 +417,22 @@ func (r *destinationListResource) Update(ctx context.Context, req resource.Updat
 		})
 
 		if !reconciled {
+			/*destinationType, err := destinationlists.NewModelTypeFromValue(planDestinationList[j].Type.ValueString())
+			if err != nil {
+				resp.Diagnostics.AddError(
+					"Error determining destination type",
+					fmt.Sprintf("Error determining destination type for %s: %s", planDestinationList[j].Destination.ValueString(), err),
+				)
+				return
+			}*/
 			tflog.Debug(ctx, "Adding missing destination", map[string]interface{}{
 				"destination": planDestinationList[j].Destination.ValueString(),
 			})
 			destinationCreateObject := destinationlists.NewDestinationCreateObject(planDestinationList[j].Destination.ValueString())
 			destinationCreateObject.SetComment(planDestinationList[j].Comment.ValueString())
+			//destinationCreateObject.SetType(*destinationType)
+
+			// Note: DestinationCreateObject doesn't have SetType method - the API auto-detects type
 			missingDestinations = append(missingDestinations, *destinationCreateObject)
 		}
 	}
@@ -431,7 +457,7 @@ func (r *destinationListResource) Update(ctx context.Context, req resource.Updat
 
 		reconciled := false
 		for j := range planDestinationList {
-			if readDestinations[i].Id == planDestinationList[j].Id {
+			if readDestinations[i].Destination == planDestinationList[j].Destination {
 				reconciled = true
 				break
 			}
@@ -474,6 +500,12 @@ func (r *destinationListResource) Update(ctx context.Context, req resource.Updat
 		resp.Diagnostics.Append(diags...)
 		return
 	}
+
+	tflog.Debug(ctx, "Updated destination list state", map[string]interface{}{
+		"destination_list_id":   plan.Id.ValueInt64(),
+		"destination_list_name": plan.Name.ValueString(),
+		"destinations":          plan.Destinations.String(),
+	})
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
