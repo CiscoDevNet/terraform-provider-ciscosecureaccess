@@ -3,20 +3,12 @@
 page_title: "ciscosecureaccess_global_settings Resource - terraform-provider-ciscosecureaccess"
 subcategory: ""
 description: |-
-<<<<<<< Updated upstream
-  Manage global default rule settings for Cisco SSE
-=======
   Manage global default rule settings for Cisco Secure Access
->>>>>>> Stashed changes
 ---
 
 # ciscosecureaccess_global_settings (Resource)
 
-<<<<<<< Updated upstream
-Manage global default rule settings for Cisco SSE
-=======
 Manage global default rule settings for Cisco Secure Access
->>>>>>> Stashed changes
 
 ## Example Usage
 

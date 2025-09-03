@@ -6,11 +6,7 @@ description: |-
   Data source for retrieving Cisco Secure Access identities
 ---
 
-<<<<<<< Updated upstream
-# ciscosse_identity (Data Source)
-=======
 # ciscosecureaccess_identity (Data Source)
->>>>>>> Stashed changes
 
 Data source for retrieving Cisco Secure Access identities
 
