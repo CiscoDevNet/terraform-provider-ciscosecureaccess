@@ -459,10 +459,6 @@ func (r *privateResourceResource) Read(ctx context.Context, req resource.ReadReq
 	})
 
 	readResp, httpRes, err := r.client.PrivateResourcesAPI.GetPrivateResource(ctx, int64(policyId)).Execute()
-	tflog.Debug(ctx, "HTTP response received", map[string]interface{}{
-		"status_code": httpRes.StatusCode,
-		"policy_id":   policyId,
-	})
 	if err != nil {
 		if httpRes != nil && httpRes.StatusCode == privateResourceHTTPNotFound {
 			resp.State.RemoveResource(ctx)
@@ -474,6 +470,10 @@ func (r *privateResourceResource) Read(ctx context.Context, req resource.ReadReq
 		)
 		return
 	}
+	tflog.Debug(ctx, "HTTP response received", map[string]interface{}{
+		"status_code": httpRes.StatusCode,
+		"policy_id":   policyId,
+	})
 	stringResp, _ := json.Marshal(readResp)
 	tflog.Debug(ctx, "Definition of upstream private resource", map[string]interface{}{
 		"response": string(stringResp),

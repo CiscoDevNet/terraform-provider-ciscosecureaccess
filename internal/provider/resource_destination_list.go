@@ -59,7 +59,13 @@ type destinationListResourceModel struct {
 func (r *destinationListResourceModel) GetDestinations(ctx context.Context, client *destinationlists.APIClient) ([]destinationModel, error) {
 	destinationsResp, httpRes, err := client.DestinationsAPI.GetDestinations(ctx, r.Id.ValueInt64()).Execute()
 	if err != nil {
-		return nil, fmt.Errorf("error code %s reading destinations for destination list %s: %w", httpRes.Status, r.Name.ValueString(), err)
+		var httpRespDetails string
+		if httpRes != nil {
+			httpRespDetails = fmt.Sprintf("HTTP response status: %s", httpRes.Status)
+		} else {
+			httpRespDetails = "HTTP response: <nil>"
+		}
+		return nil, fmt.Errorf("error code %s reading destinations for destination list %s: %w\n%v", httpRes.Status, r.Name.ValueString(), err, httpRespDetails)
 	}
 
 	destsDebug, err := json.Marshal(destinationsResp.Data)
@@ -70,10 +76,6 @@ func (r *destinationListResourceModel) GetDestinations(ctx context.Context, clie
 		"destination_list_id": r.Id.ValueInt64(),
 		"destinations":        string(destsDebug),
 	})
-
-	if err != nil {
-		return nil, fmt.Errorf("error code %s reading destinations for destination list %s: %w", httpRes.Status, r.Name.ValueString(), err)
-	}
 
 	modeledDestinations := make([]destinationModel, len(destinationsResp.Data))
 	for i := range destinationsResp.Data {
@@ -417,20 +419,11 @@ func (r *destinationListResource) Update(ctx context.Context, req resource.Updat
 		})
 
 		if !reconciled {
-			/*destinationType, err := destinationlists.NewModelTypeFromValue(planDestinationList[j].Type.ValueString())
-			if err != nil {
-				resp.Diagnostics.AddError(
-					"Error determining destination type",
-					fmt.Sprintf("Error determining destination type for %s: %s", planDestinationList[j].Destination.ValueString(), err),
-				)
-				return
-			}*/
 			tflog.Debug(ctx, "Adding missing destination", map[string]interface{}{
 				"destination": planDestinationList[j].Destination.ValueString(),
 			})
 			destinationCreateObject := destinationlists.NewDestinationCreateObject(planDestinationList[j].Destination.ValueString())
 			destinationCreateObject.SetComment(planDestinationList[j].Comment.ValueString())
-			//destinationCreateObject.SetType(*destinationType)
 
 			// Note: DestinationCreateObject doesn't have SetType method - the API auto-detects type
 			missingDestinations = append(missingDestinations, *destinationCreateObject)

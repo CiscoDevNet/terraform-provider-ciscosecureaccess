@@ -6,6 +6,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
 	"github.com/CiscoDevNet/go-ciscosecureaccess/reports"
@@ -115,6 +116,10 @@ func (d *groupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	groups, getDiag := getIdentitiesForFilter(ctx, &d.client, data.Filter.ValueString(), identityTypeGroup)
 	if getDiag.HasError() {
 		resp.Diagnostics.Append(getDiag...)
+		resp.Diagnostics.AddError(
+			"Error retrieving groups",
+			fmt.Sprintf("Failed to retrieve groups using filter '%s'", data.Filter.ValueString()),
+		)
 		return
 	}
 

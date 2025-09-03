@@ -153,6 +153,15 @@ func (p *ciscosecureaccessProvider) Configure(ctx context.Context, req provider.
 		ApiEndpoint: apiEndpoint,
 	}
 
+	// Ensure clientFactory is not nil after initialization
+	if p.clientFactory == nil {
+		resp.Diagnostics.AddError(
+			"Client Initialization Error",
+			"Failed to initialize Cisco Secure Access client factory. Please check your configuration.",
+		)
+		return
+	}
+
 	// Make the client factory available during DataSource and Resource
 	// type Configure methods.
 	resp.DataSourceData = p.clientFactory

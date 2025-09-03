@@ -389,6 +389,15 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 		return
 	}
 
+	// Ensure httpRes is not nil before accessing its fields
+	if httpRes == nil {
+		resp.Diagnostics.AddError(
+			"HTTP Response Error",
+			fmt.Sprintf("Received nil HTTP response while reading access policy ID %d", resourceId),
+		)
+		return
+	}
+
 	// Parse rule conditions from API response
 	for _, condition := range readResp.RuleConditions {
 		switch {
@@ -497,7 +506,7 @@ func (r *accessPolicyResource) Update(ctx context.Context, req resource.UpdateRe
 		if err != nil {
 			resp.Diagnostics.AddError(
 				"Error updating access policy",
-				fmt.Sprintf("Could not update access policy ID %s: %s", plan.ID.String(), err.Error()),
+				fmt.Sprintf("Could not update access policy ID %d: %v", plan.ID.ValueInt64(), err),
 			)
 			return
 		}

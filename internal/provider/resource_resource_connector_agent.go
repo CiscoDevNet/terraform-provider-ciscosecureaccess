@@ -204,11 +204,9 @@ func (r *resourceConnectorAgentResource) findAndConfigureAgent(ctx context.Conte
 	return retry.Do(
 		func() error {
 			agents, httpRes, err := r.client.ConnectorsAPI.ListConnectors(ctx).Filters(filters).Execute()
-			defer func() {
-				if httpRes != nil && httpRes.Body != nil {
-					httpRes.Body.Close()
-				}
-			}()
+			if httpRes != nil && httpRes.Body != nil {
+				httpRes.Body.Close()
+			}
 
 			if err != nil {
 				return r.handleListConnectorsError(ctx, httpRes, err)
@@ -239,6 +237,11 @@ func (r *resourceConnectorAgentResource) handleListConnectorsError(ctx context.C
 		"response_body": string(bodyBytes),
 		"error":         err.Error(),
 	})
+
+	// Ensure httpRes is not nil before accessing its fields in handleListConnectorsError
+	if httpRes == nil {
+		return retry.Unrecoverable(fmt.Errorf("received nil HTTP response while listing resource connector agents"))
+	}
 
 	if statusCode == connectorHTTPBadRequest || statusCode == connectorHTTPTooManyReqs {
 		return fmt.Errorf("retryable error (status %d): %v - %s", statusCode, err, string(bodyBytes))
@@ -280,6 +283,10 @@ func (r *resourceConnectorAgentResource) processConnectorResponse(ctx context.Co
 		}
 
 		// Process the single agent found
+		if connectorListRes.GetData() == nil {
+			return fmt.Errorf("received nil data in connector agents response")
+		}
+
 		for _, agent := range connectorListRes.GetData() {
 			respString, _ := json.Marshal(agent)
 			tflog.Debug(ctx, "Found resource connector agent", map[string]interface{}{
@@ -294,66 +301,7 @@ func (r *resourceConnectorAgentResource) processConnectorResponse(ctx context.Co
 			tflog.Info(ctx, "Successfully configured resource connector agent", map[string]interface{}{
 				"agent_id": state.ID.ValueInt64(),
 			})
-			return nil
 		}
-
-		return nil
-	}
-
-	// Try type assertion for the expected response structure with total and data fields
-	agentsList, ok := agents.(interface {
-		GetTotal() int64
-		GetData() []resconn.ConnectorResponse
-	})
-	if !ok {
-		// If the direct interface assertion fails, try to access by reflection-like approach
-		// Check if it's a pointer and get the value type
-		if ptrType, isPtrOk := agents.(interface{ GetTotal() int64 }); isPtrOk {
-			tflog.Debug(ctx, "Found GetTotal method", map[string]interface{}{
-				"total": ptrType.GetTotal(),
-			})
-		}
-
-		// Log details to help debug the actual type
-		tflog.Error(ctx, "Type assertion failed for ListConnectors response", map[string]interface{}{
-			"expected": "interface with GetTotal() int64 and GetData() []resconn.ConnectorResponse",
-			"actual":   fmt.Sprintf("%T", agents),
-		})
-
-		return fmt.Errorf("unexpected response type from ListConnectors: %T", agents)
-	}
-
-	totalAgents := int(agentsList.GetTotal())
-
-	tflog.Debug(ctx, "Received connector agents response", map[string]interface{}{
-		"total_agents": totalAgents,
-		"filters":      filters,
-	})
-
-	if totalAgents == 0 {
-		return fmt.Errorf("no connector agent matching filter '%s' found", filters)
-	}
-
-	if totalAgents > 1 {
-		return retry.Unrecoverable(fmt.Errorf("filter %s matches multiple agents (%d)", filters, totalAgents))
-	}
-
-	// Process the single agent found
-	for _, agent := range agentsList.GetData() {
-		respString, _ := json.Marshal(agent)
-		tflog.Debug(ctx, "Found resource connector agent", map[string]interface{}{
-			"agent_data": string(respString),
-		})
-
-		state := *data
-		state.LoadFromAPI(ctx, agent)
-		r.Synchronize(ctx, &state, data)
-		*data = state
-
-		tflog.Info(ctx, "Successfully configured resource connector agent", map[string]interface{}{
-			"agent_id": state.ID.ValueInt64(),
-		})
-		return nil
 	}
 
 	return nil

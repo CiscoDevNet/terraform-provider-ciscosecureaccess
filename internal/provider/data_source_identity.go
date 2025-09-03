@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/avast/retry-go/v4"
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
 	"github.com/CiscoDevNet/go-ciscosecureaccess/reports"
+	"github.com/avast/retry-go/v4"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -172,6 +172,13 @@ func getIdentitiesForFilter(ctx context.Context, client *reports.APIClient, filt
 					Execute()
 
 				if err != nil {
+					var httpRespDetails string
+					if httpRes != nil {
+						httpRespDetails = fmt.Sprintf("HTTP response status: %d", httpRes.StatusCode)
+					} else {
+						httpRespDetails = "HTTP response: <nil>"
+					}
+
 					if httpRes != nil && httpRes.StatusCode == 429 {
 						tflog.Warn(ctx, "Rate limited, retrying", map[string]interface{}{
 							"offset": offset,
@@ -180,7 +187,7 @@ func getIdentitiesForFilter(ctx context.Context, client *reports.APIClient, filt
 					} else {
 						diagnostics.AddError(
 							"Error listing identity/group source",
-							fmt.Sprintf("Could not retrieve identities: %s", err.Error()),
+							fmt.Sprintf("Could not retrieve identities: %s\n%v", err.Error(), httpRespDetails),
 						)
 						done = true
 						return retry.Unrecoverable(err)

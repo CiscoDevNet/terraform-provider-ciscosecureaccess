@@ -133,9 +133,23 @@ func (r *globalSettingsResource) FetchState(ctx context.Context, state *globalSe
 
 	getResp, httpResp, err := r.client.RuleSettingsAndDefaultsAPI.GetPolicySettings(ctx).Execute()
 	if err != nil {
+		var httpRespDetails string
+		if httpResp != nil {
+			httpRespDetails = fmt.Sprintf("HTTP response: %v", httpResp)
+		} else {
+			httpRespDetails = "HTTP response: <nil>"
+		}
 		diags.AddError(
 			"Error retrieving global policy settings",
-			fmt.Sprintf("Error when calling RuleSettingsAndDefaultsAPI.GetPolicySettings: %v\nHTTP response: %v", err, httpResp),
+			fmt.Sprintf("Error when calling RuleSettingsAndDefaultsAPI.GetPolicySettings: %v\n%v", err, httpRespDetails),
+		)
+		return diags
+	}
+
+	if getResp == nil {
+		diags.AddError(
+			"Error retrieving global policy settings",
+			"Received nil response from RuleSettingsAndDefaultsAPI.GetPolicySettings",
 		)
 		return diags
 	}
@@ -185,9 +199,15 @@ func (r *globalSettingsResource) PutState(ctx context.Context, currentState *glo
 
 		_, httpResp, err := r.client.RuleSettingsAndDefaultsAPI.PutPolicySetting(ctx, string(rules.SETTINGNAME_SSE_GLOBAL_IPS_ENABLED)).SettingsRequestObject(settingsRequestObject).Execute()
 		if err != nil {
+			var httpRespDetails string
+			if httpResp != nil {
+				httpRespDetails = fmt.Sprintf("HTTP response: %v", httpResp)
+			} else {
+				httpRespDetails = "HTTP response: <nil>"
+			}
 			diags.AddError(
 				"Error updating global decryption setting",
-				fmt.Sprintf("Error when calling RuleSettingsAndDefaultsAPI.PutPolicySetting: %v\nHTTP response: %v", err, httpResp),
+				fmt.Sprintf("Error when calling RuleSettingsAndDefaultsAPI.PutPolicySetting: %v\n%v", err, httpRespDetails),
 			)
 			return diags
 		}

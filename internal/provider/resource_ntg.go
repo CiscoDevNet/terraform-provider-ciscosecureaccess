@@ -214,7 +214,7 @@ func (r *networkTunnelGroupResource) Create(ctx context.Context, req resource.Cr
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error creating network tunnel group",
-			fmt.Sprintf("Could not create network tunnel group: %s", err.Error()),
+			fmt.Sprintf("Failed to create network tunnel group '%s': %v", name, err),
 		)
 		return
 	}
@@ -278,6 +278,15 @@ func (r *networkTunnelGroupResource) Read(ctx context.Context, req resource.Read
 		resp.Diagnostics.AddError(
 			"Error reading network tunnel group",
 			fmt.Sprintf("Could not read network tunnel group ID %d: %s", tunnelId, err.Error()),
+		)
+		return
+	}
+
+	// Ensure httpRes is not nil before accessing its fields in Read
+	if httpRes == nil {
+		resp.Diagnostics.AddError(
+			"HTTP Response Error",
+			fmt.Sprintf("Received nil HTTP response while reading network tunnel group ID %d", tunnelId),
 		)
 		return
 	}
