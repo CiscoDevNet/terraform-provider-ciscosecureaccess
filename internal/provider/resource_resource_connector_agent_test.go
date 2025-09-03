@@ -27,11 +27,11 @@ const (
 )
 
 func TestResourceConnectorAgentResource_instanceID(t *testing.T) {
+	if os.Getenv("TEST_CISCOSECUREACCESS_CONNECTOR_AGENT_INSTANCE_ID") == "" {
+		t.Skip("Skipping test for connector agent instance ID as environment variable TEST_CISCOSECUREACCESS_CONNECTOR_AGENT_INSTANCE_ID")
+	}
+	rName := os.Getenv("TEST_CISCOSECUREACCESS_CONNECTOR_AGENT_INSTANCE_ID") // Ensure the environment variable is set for instance ID tests
 	rateLimitedTest(t, func() {
-		if os.Getenv("TEST_CISCOSECUREACCESS_CONNECTOR_AGENT_INSTANCE_ID") == "" {
-			t.Skip("Skipping test for connector agent instance ID as environment variable TEST_CISCOSECUREACCESS_CONNECTOR_AGENT_INSTANCE_ID")
-		}
-		rName := os.Getenv("TEST_CISCOSECUREACCESS_CONNECTOR_AGENT_INSTANCE_ID") // Ensure the environment variable is set for instance ID tests
 
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
@@ -53,11 +53,11 @@ func TestResourceConnectorAgentResource_instanceID(t *testing.T) {
 }
 
 func TestResourceConnectorAgentResource_hostname(t *testing.T) {
+	if os.Getenv("TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID") == "" {
+		t.Skip("Skipping test for connector agent instance ID as environment variable TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID")
+	}
+	rName := os.Getenv("TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID") // Ensure the environment variable is set for instance ID tests
 	rateLimitedTest(t, func() {
-		if os.Getenv("TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID") == "" {
-			t.Skip("Skipping test for connector agent instance ID as environment variable TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID")
-		}
-		rName := os.Getenv("TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID") // Ensure the environment variable is set for instance ID tests
 
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
@@ -79,12 +79,12 @@ func TestResourceConnectorAgentResource_hostname(t *testing.T) {
 }
 
 func TestResourceConnectorAgentResource_enabled(t *testing.T) {
-	rateLimitedTest(t, func() {
-		if os.Getenv("TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID") == "" {
-			t.Skip("Skipping test for connector agent enabled as environment variable TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID")
-		}
-		rName := os.Getenv("TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID") // Ensure the environment variable is set for instance ID tests
+	if os.Getenv("TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID") == "" {
+		t.Skip("Skipping test for connector agent enabled as environment variable TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID")
+	}
+	rName := os.Getenv("TEST_CISCOSSE_CONNECTOR_AGENT_INSTANCE_ID") // Ensure the environment variable is set for instance ID tests
 
+	rateLimitedTest(t, func() {
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,

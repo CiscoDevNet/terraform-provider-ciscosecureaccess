@@ -65,6 +65,10 @@ func testGroupFixture(t *testing.T) (*reports.Identity, error) {
 		return nil, fmt.Errorf("failed to get identities: %w", err)
 	}
 
+	if httpResp == nil {
+		return nil, fmt.Errorf("HTTP response is nil")
+	}
+
 	if httpResp.StatusCode != 200 {
 		return nil, fmt.Errorf("unexpected HTTP status: %d - %s", httpResp.StatusCode, httpResp.Status)
 	}
