@@ -169,6 +169,15 @@ func (d *resourceConnectorGroupsDataSource) Read(ctx context.Context, req dataso
 		"count": len(groups.Data),
 	})
 
+	// Ensure groups.Data is not nil before iterating
+	if groups.Data == nil {
+		resp.Diagnostics.AddError(
+			"API Response Error",
+			"Received nil data from the API while listing resource connector groups.",
+		)
+		return
+	}
+
 	// Convert API response to terraform models
 	connectorGroups := make([]resourceConnectorGroupModel, 0, len(groups.Data))
 	for _, group := range groups.Data {
@@ -218,7 +227,7 @@ func (d *resourceConnectorGroupsDataSource) buildFiltersFromMap(ctx context.Cont
 
 	filterBytes, err := json.Marshal(map[string]string{elements["name"].ValueString(): elements["query"].ValueString()})
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal filter map: %w", err)
+		return "", fmt.Errorf("failed to marshal filter map for Resource Connector Groups: %w", err)
 	}
 
 	return string(filterBytes), nil

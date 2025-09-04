@@ -6,6 +6,7 @@ package provider
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -32,5 +33,8 @@ func FilterSchema() schema.NestedAttributeObject {
 func (f *Filter) BuildQueryFilters() (string, error) {
 	filterMap := map[string]string{f.Name.String(): f.Query.String()}
 	filterObject, err := json.Marshal(filterMap)
-	return string(filterObject), err
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal filter map for query '%s': %w", f.Query.String(), err)
+	}
+	return string(filterObject), nil
 }

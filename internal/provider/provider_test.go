@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var testSSEClientFactory *client.SSEClientFactory
 var testAccCiscoSecureAccessProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
 	"ciscosecureaccess": providerserver.NewProtocol6WithError(New("0.0.1")()),
 }
@@ -23,11 +24,17 @@ func testAccPreCheck(t *testing.T) {
 }
 
 func testClientFactory(t *testing.T) *client.SSEClientFactory {
-	keyId, ok := os.LookupEnv("CISCOSECUREACCESS_KEY_ID")
-	require.True(t, ok, "missing CISCOSECUREACCESS_KEY_ID")
-	keySecret, ok := os.LookupEnv("CISCOSECUREACCESS_KEY_SECRET")
-	require.True(t, ok, "missing CISCOSECUREACCESS_KEY_SECRET")
+	if testSSEClientFactory == nil {
+		keyId, ok := os.LookupEnv("CISCOSECUREACCESS_KEY_ID")
+		require.True(t, ok, "missing CISCOSECUREACCESS_KEY_ID")
+		keySecret, ok := os.LookupEnv("CISCOSECUREACCESS_KEY_SECRET")
+		require.True(t, ok, "missing CISCOSECUREACCESS_KEY_SECRET")
 
-	return &client.SSEClientFactory{KeyId: keyId, KeySecret: keySecret}
+		testSSEClientFactory = &client.SSEClientFactory{
+			KeyId:     keyId,
+			KeySecret: keySecret,
+		}
+	}
 
+	return testSSEClientFactory
 }

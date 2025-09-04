@@ -23,20 +23,20 @@ const (
 
 // TestGlobalSettingsResource_enabled tests enabling global decryption
 func TestGlobalSettingsResource_enabled(t *testing.T) {
+	if os.Getenv(testGlobalSettingsEnvVar) != "true" {
+		t.Skipf("Skipping test for global settings enablement as it is controlled by environment variable %s", testGlobalSettingsEnvVar)
+	}
 	rateLimitedTest(t, func() {
-		if os.Getenv(testGlobalSettingsEnvVar) != "true" {
-			t.Skipf("Skipping test for global settings enablement as it is controlled by environment variable %s", testGlobalSettingsEnvVar)
-		}
 		runGlobalSettingsEnablementTest(t, true)
 	}, minWaitTime)
 }
 
 // TestGlobalSettingsResource_disabled tests disabling global decryption
 func TestGlobalSettingsResource_disabled(t *testing.T) {
+	if os.Getenv(testGlobalSettingsEnvVar) != "true" {
+		t.Skipf("Skipping test for global settings enablement as it is controlled by environment variable %s", testGlobalSettingsEnvVar)
+	}
 	rateLimitedTest(t, func() {
-		if os.Getenv(testGlobalSettingsEnvVar) != "true" {
-			t.Skipf("Skipping test for global settings enablement as it is controlled by environment variable %s", testGlobalSettingsEnvVar)
-		}
 		runGlobalSettingsEnablementTest(t, false)
 	}, minWaitTime)
 }
