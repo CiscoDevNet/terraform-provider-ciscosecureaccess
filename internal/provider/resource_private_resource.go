@@ -408,26 +408,34 @@ func (r *privateResourceResource) createPrivateResourceWithRetry(ctx context.Con
 			createResp, httpRes, err = r.client.PrivateResourcesAPI.AddPrivateResource(ctx).PrivateResourceRequest(*resourceDefinition).Execute()
 
 			if err != nil {
-				bodyBytes, _ := io.ReadAll(httpRes.Body)
-				statusCode := httpRes.StatusCode
+				if httpRes != nil {
+					bodyBytes, _ := io.ReadAll(httpRes.Body)
+					statusCode := httpRes.StatusCode
 
-				tflog.Debug(ctx, "Private resource creation attempt failed", map[string]interface{}{
-					"status_code":   statusCode,
-					"response_body": string(bodyBytes),
-					"error":         err.Error(),
-				})
-
-				if statusCode == privateResourceHTTPConflict || statusCode == privateResourceHTTPTooManyReqs {
-					// Retryable errors
-					return fmt.Errorf("retryable error (status %d): %v - %s", statusCode, err, string(bodyBytes))
-				} else {
-					// Non-retryable errors
-					tflog.Error(ctx, "Non-retryable error creating private resource", map[string]interface{}{
+					tflog.Debug(ctx, "Private resource creation attempt failed", map[string]interface{}{
 						"status_code":   statusCode,
 						"response_body": string(bodyBytes),
 						"error":         err.Error(),
 					})
-					return retry.Unrecoverable(fmt.Errorf("status %d: %v - %s", statusCode, err, string(bodyBytes)))
+
+					if statusCode == privateResourceHTTPConflict || statusCode == privateResourceHTTPTooManyReqs {
+						// Retryable errors
+						return fmt.Errorf("retryable error (status %d): %v - %s", statusCode, err, string(bodyBytes))
+					} else {
+						// Non-retryable errors
+						tflog.Error(ctx, "Non-retryable error creating private resource", map[string]interface{}{
+							"status_code":   statusCode,
+							"response_body": string(bodyBytes),
+							"error":         err.Error(),
+						})
+						return retry.Unrecoverable(fmt.Errorf("status %d: %v - %s", statusCode, err, string(bodyBytes)))
+					}
+				} else {
+					// HTTP response is nil
+					tflog.Error(ctx, "Error creating private resource with nil HTTP response", map[string]interface{}{
+						"error": err.Error(),
+					})
+					return retry.Unrecoverable(fmt.Errorf("HTTP response is nil: %v", err))
 				}
 			}
 
@@ -539,7 +547,7 @@ func (r *privateResourceResource) processReadAddresses(ctx context.Context, apiA
 }
 
 // processReadAccessTypes processes access types from API response and updates state
-func (r *privateResourceResource) processReadAccessTypes(ctx context.Context, apiAccessTypes interface{}, state *privateResourceResourceModel) diag.Diagnostics {
+func (r *privateResourceResource) processReadAccessTypes(ctx context.Context, apiAccessTypes []privateapps.AccessTypesInner, state *privateResourceResourceModel) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	respString, _ := json.Marshal(apiAccessTypes)
@@ -551,44 +559,26 @@ func (r *privateResourceResource) processReadAccessTypes(ctx context.Context, ap
 
 	// We need to use type assertion or reflection to handle the API response
 	// For now, let's use the original approach but with better logging
-	switch accessTypes := apiAccessTypes.(type) {
-	case []interface{}:
-		for _, access := range accessTypes {
-			accessBytes, _ := json.Marshal(access)
-			tflog.Debug(ctx, "Processing access type", map[string]interface{}{
-				"access_type": string(accessBytes),
-			})
+	for _, access := range apiAccessTypes {
+		accessBytes, _ := json.Marshal(access)
+		tflog.Debug(ctx, "Processing access type", map[string]interface{}{
+			"access_type": string(accessBytes),
+		})
 
-			// Process access type based on structure
-			if accessMap, ok := access.(map[string]interface{}); ok {
-				if _, hasBranch := accessMap["BranchAccess"]; hasBranch {
-					tflog.Debug(ctx, "Found branch access configuration")
-				}
+		// Process access type based on structure
+		if access.BranchAccess != nil {
+			tflog.Debug(ctx, "Found branch access configuration")
+		}
 
-				if clientAccess, hasClient := accessMap["ClientBasedAccess"]; hasClient && clientAccess != nil {
-					clientTypeMissing = false
-					tflog.Debug(ctx, "Processing client-based access addresses")
+		if access.ClientBasedAccess != nil {
+			clientTypeMissing = false
+			tflog.Debug(ctx, "Processing client-based access addresses")
 
-					if clientMap, ok := clientAccess.(map[string]interface{}); ok {
-						if addresses, hasAddresses := clientMap["ReachableAddresses"]; hasAddresses {
-							if addressSlice, ok := addresses.([]interface{}); ok {
-								stringAddresses := make([]string, len(addressSlice))
-								for i, addr := range addressSlice {
-									if addrStr, ok := addr.(string); ok {
-										stringAddresses[i] = addrStr
-									}
-								}
-
-								var clientDiags diag.Diagnostics
-								state.ClientReachableAddresses, clientDiags = types.SetValueFrom(ctx, types.StringType, stringAddresses)
-								if clientDiags.HasError() {
-									diags.Append(clientDiags...)
-									return diags
-								}
-							}
-						}
-					}
-				}
+			var clientDiags diag.Diagnostics
+			state.ClientReachableAddresses, clientDiags = types.SetValueFrom(ctx, types.StringType, access.ClientBasedAccess.ReachableAddresses)
+			if clientDiags.HasError() {
+				diags.Append(clientDiags...)
+				return diags
 			}
 		}
 	}
@@ -599,7 +589,6 @@ func (r *privateResourceResource) processReadAccessTypes(ctx context.Context, ap
 	}
 
 	return diags
-
 }
 
 func (r *privateResourceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -694,14 +683,20 @@ func (r *privateResourceResource) Delete(ctx context.Context, req resource.Delet
 
 	// Delete existing private resource
 	delResp, httpRes, err := r.client.PrivateResourcesAPI.DeletePrivateResource(ctx, int64(id)).Execute()
-	if httpRes.StatusCode == privateResourceHTTPNotFound {
+	if httpRes != nil && httpRes.StatusCode == privateResourceHTTPNotFound {
 		tflog.Debug(ctx, "Private resource not found, already deleted")
 		return
 	}
 	if err != nil {
+		var httpRespDetails string
+		if httpRes != nil {
+			httpRespDetails = fmt.Sprintf("HTTP response status: %d", httpRes.StatusCode)
+		} else {
+			httpRespDetails = "HTTP response: <nil>"
+		}
 		resp.Diagnostics.AddError(
 			"Error deleting private resource",
-			fmt.Sprintf("Could not delete private resource ID %d: %v", id, err),
+			fmt.Sprintf("Could not delete private resource ID %d: %v\n%v", id, err, httpRespDetails),
 		)
 		return
 	}
