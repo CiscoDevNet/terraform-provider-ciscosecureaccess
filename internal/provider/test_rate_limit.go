@@ -15,7 +15,7 @@ var (
 	testRateLimiter = make(chan struct{}, 1) // Only allow 1 test at a time
 	lastTestTime    time.Time
 	testMutex       sync.Mutex
-	minWaitTime     = 65 * time.Second // Minimum wait time between tests
+	minWaitTime     = 5 * time.Second // Minimum wait time between tests
 )
 
 // rateLimitedTest ensures we don't exceed 2 tests per minute
