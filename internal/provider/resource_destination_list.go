@@ -286,7 +286,7 @@ func (r *destinationListResource) Read(ctx context.Context, req resource.ReadReq
 	// Read API call logic
 	destinationListResp, httpRes, err := r.client.DestinationListsAPI.GetDestinationList(ctx, data.Id.ValueInt64()).Execute()
 	if err != nil {
-		if httpRes.Body == nil {
+		if httpRes == nil || httpRes.Body == nil {
 			resp.Diagnostics.AddError(
 				"Error reading response body",
 				fmt.Sprintf("Error reading destination list %s response: %s", data.Name.ValueString(), err))
