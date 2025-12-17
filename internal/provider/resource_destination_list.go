@@ -241,10 +241,16 @@ func (r *destinationListResource) Create(ctx context.Context, req resource.Creat
 	}
 
 	createResp, httpRes, err := r.client.DestinationListsAPI.CreateDestinationList(ctx).DestinationListCreate(createRequest).Execute()
+	if err != nil {
+		resp.Diagnostics.AddError(
+			fmt.Sprintf("HTTP Response: %v", httpRes),
+			fmt.Sprintf("Error creating destination list %s: %s", plan.Name.ValueString(), err.Error()))
+		return
+	}
 	if httpRes.StatusCode != httpStatusOK {
 		resp.Diagnostics.AddError(
 			fmt.Sprintf("HTTP Response: %s", httpRes.Status),
-			fmt.Sprintf("Error creating destination list %s: %s", plan.Name.ValueString(), err.Error()))
+			fmt.Sprintf("Error creating destination list %s", plan.Name.ValueString()))
 		return
 	}
 
@@ -516,15 +522,16 @@ func (r *destinationListResource) Delete(ctx context.Context, req resource.Delet
 
 	// Delete API call logic
 	deleteResp, httpRes, err := r.client.DestinationListsAPI.DeleteDestinationList(ctx, data.Id.ValueInt64()).Execute()
-	if httpRes.StatusCode == httpStatusNotFound {
-		tflog.Debug(ctx, "Destination list not found during delete", map[string]interface{}{
-			"destination_list_id":   data.Id.ValueInt64(),
-			"destination_list_name": data.Name.ValueString(),
-		})
-		return
-	} else if err != nil {
+	if err != nil {
+		if httpRes != nil && httpRes.StatusCode == httpStatusNotFound {
+			tflog.Debug(ctx, "Destination list not found during delete", map[string]interface{}{
+				"destination_list_id":   data.Id.ValueInt64(),
+				"destination_list_name": data.Name.ValueString(),
+			})
+			return
+		}
 		resp.Diagnostics.AddError(
-			fmt.Sprintf("HTTP Response: %s", httpRes.Status),
+			fmt.Sprintf("HTTP Response: %v", httpRes),
 			fmt.Sprintf("Error deleting destination list %s: %s", data.Name.ValueString(), err.Error()))
 		return
 	}
