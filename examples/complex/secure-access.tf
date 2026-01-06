@@ -2,8 +2,8 @@ terraform {
   required_version = "~> 1.1"
   required_providers {
     ciscosecureaccess = {
-      source  = "github.com/CiscoDevNet/ciscosecureaccess"
-      version = "~> 0.0.1"
+      source  = "CiscoDevNet/ciscosecureaccess"
+      version = "~> 1.0.0"
     }
   }
 }
