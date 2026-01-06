@@ -6,8 +6,8 @@ terraform {
       version = "4.67.0"
     }
     ciscosecureaccess = {
-      source  = "github.com/cisco/ciscosecureaccess"
-      version = "~> 0.0.1"
+      source  = "ciscodevnet/ciscosecureaccess"
+      version = "~> 1.0.0"
     }
   }
 }
