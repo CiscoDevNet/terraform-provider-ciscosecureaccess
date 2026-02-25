@@ -6,6 +6,7 @@ package provider
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/acctest"
@@ -113,6 +114,30 @@ func TestAccDestinationList_addDestination(t *testing.T) {
 	}, minWaitTime)
 }
 
+func TestAccDestinationList_threeHundredDestinations(t *testing.T) {
+	rateLimitedTest(t, func() {
+		testName := generateDestinationListTestName("three_hundred_destinations")
+
+		resource.Test(t, resource.TestCase{
+			PreCheck:                 func() { testAccPreCheck(t) },
+			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: testAccDestinationListThreeHundredDestinationsConfig(testName),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttrSet(testDestinationListResourceName, "id"),
+						resource.TestCheckResourceAttr(testDestinationListResourceName, "name", testName),
+						resource.TestCheckResourceAttr(testDestinationListResourceName, "destinations.#", "300"),
+					),
+					ConfigStateChecks: []statecheck.StateCheck{
+						statecheck.ExpectKnownValue(testDestinationListResourceName, tfjsonpath.New("destinations"), knownvalue.SetSizeExact(300)),
+					},
+				},
+			},
+		})
+	}, minWaitTime)
+}
+
 // Helper functions
 
 // generateDestinationListTestName creates a unique test name with the given suffix
@@ -165,4 +190,25 @@ resource "ciscosecureaccess_destination_list" "acceptance_list" {
       },
     ]
 }`, name)
+}
+
+// testAccDestinationListThreeHundredDestinationsConfig returns a destination list configuration with 300 destinations
+func testAccDestinationListThreeHundredDestinationsConfig(name string) string {
+	var destinations strings.Builder
+
+	for i := 1; i <= 300; i++ {
+		destinations.WriteString(fmt.Sprintf(`      {
+        comment = "Destination %d managed by TF"
+        type = "domain"
+        destination = "dest%d.example.com"
+      },
+`, i, i))
+	}
+
+	return fmt.Sprintf(`
+resource "ciscosecureaccess_destination_list" "acceptance_list" {
+    name = "%s"
+    destinations = [
+%s    ]
+}`, name, destinations.String())
 }

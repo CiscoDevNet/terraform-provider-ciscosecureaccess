@@ -33,6 +33,8 @@ var _ resource.Resource = (*destinationListResource)(nil)
 const (
 	// Bundle type ID for destination lists
 	defaultBundleTypeID = 2
+	// Number of destination records to request per page
+	defaultDestinationsPageLimit = 100
 	// HTTP status codes
 	httpStatusOK       = 200
 	httpStatusNotFound = 404
@@ -57,35 +59,51 @@ type destinationListResourceModel struct {
 
 // GetDestinations retrieves destinations for a destination list
 func (r *destinationListResourceModel) GetDestinations(ctx context.Context, client *destinationlists.APIClient) ([]destinationModel, error) {
-	destinationsResp, httpRes, err := client.DestinationsAPI.GetDestinations(ctx, r.Id.ValueInt64()).Execute()
-	if err != nil {
-		var httpRespDetails string
-		if httpRes != nil {
-			httpRespDetails = fmt.Sprintf("HTTP response status: %s", httpRes.Status)
-		} else {
-			httpRespDetails = "HTTP response: <nil>"
+	page := int64(1)
+	limit := int64(defaultDestinationsPageLimit)
+	allDestinations := make([]destinationlists.DestinationObjectWithStringId, 0)
+
+	for {
+		destinationsResp, httpRes, err := client.DestinationsAPI.GetDestinations(ctx, r.Id.ValueInt64()).Page(page).Limit(limit).Execute()
+		if err != nil {
+			if httpRes != nil {
+				return nil, fmt.Errorf("error code %s reading destinations for destination list %s: %w", httpRes.Status, r.Name.ValueString(), err)
+			}
+			return nil, fmt.Errorf("error reading destinations for destination list %s: %w", r.Name.ValueString(), err)
 		}
-		return nil, fmt.Errorf("error code %s reading destinations for destination list %s: %w\n%v", httpRes.Status, r.Name.ValueString(), err, httpRespDetails)
+
+		allDestinations = append(allDestinations, destinationsResp.Data...)
+
+		total, hasTotal := destinationsResp.Meta.GetTotalOk()
+		if hasTotal && int64(len(allDestinations)) >= *total {
+			break
+		}
+
+		if int64(len(destinationsResp.Data)) < limit {
+			break
+		}
+
+		page++
 	}
 
-	destsDebug, err := json.Marshal(destinationsResp.Data)
+	destsDebug, err := json.Marshal(allDestinations)
 	if err != nil {
-		return nil, fmt.Errorf("error code %s reading destinations for destination list %s: %w", httpRes.Status, r.Name.ValueString(), err)
+		return nil, fmt.Errorf("error marshaling destinations for destination list %s: %w", r.Name.ValueString(), err)
 	}
 	tflog.Debug(ctx, "Retrieved destinations for destination list", map[string]interface{}{
 		"destination_list_id": r.Id.ValueInt64(),
 		"destinations":        string(destsDebug),
 	})
 
-	modeledDestinations := make([]destinationModel, len(destinationsResp.Data))
-	for i := range destinationsResp.Data {
+	modeledDestinations := make([]destinationModel, len(allDestinations))
+	for i := range allDestinations {
 		modeledDestinations[i] = destinationModel{
-			Id:          types.StringValue(destinationsResp.Data[i].Id),
-			Destination: types.StringValue(destinationsResp.Data[i].Destination),
-			Type:        types.StringValue(string(destinationsResp.Data[i].Type)),
+			Id:          types.StringValue(allDestinations[i].Id),
+			Destination: types.StringValue(allDestinations[i].Destination),
+			Type:        types.StringValue(string(allDestinations[i].Type)),
 		}
-		if destinationsResp.Data[i].Comment != nil {
-			modeledDestinations[i].Comment = types.StringValue(*destinationsResp.Data[i].Comment)
+		if allDestinations[i].Comment != nil {
+			modeledDestinations[i].Comment = types.StringValue(*allDestinations[i].Comment)
 		}
 	}
 
