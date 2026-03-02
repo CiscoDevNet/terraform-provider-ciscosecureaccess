@@ -81,6 +81,16 @@ func (m privateResourceResourceModel) ValidAccessTypes() []string {
 	return []string{accessTypeClient, accessTypeNetwork}
 }
 
+func validProtocolClientToResourceValues() []string {
+	validProtocols := make([]string, 0, len(privateapps.AllowedProtocolClientToResourceEnumValues))
+
+	for _, protocol := range privateapps.AllowedProtocolClientToResourceEnumValues {
+		validProtocols = append(validProtocols, string(protocol))
+	}
+
+	return validProtocols
+}
+
 // addressTypesModel represents address configuration for private resources
 type addressTypesModel struct {
 	Addresses       types.Set `tfsdk:"addresses"`
@@ -190,6 +200,9 @@ func (t trafficSelectorModel) TrafficSelectorAttributesNested() map[string]schem
 		"protocol": schema.StringAttribute{
 			Description: "Protocols for this traffic selector",
 			Optional:    true,
+			Validators: []validator.String{
+				stringvalidator.OneOf(validProtocolClientToResourceValues()...),
+			},
 		},
 	}
 }
