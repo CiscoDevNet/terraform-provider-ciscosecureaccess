@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/CiscoDevNet/go-ciscosecureaccess v1.0.1
+	github.com/CiscoDevNet/go-ciscosecureaccess v1.0.2
 	github.com/avast/retry-go/v4 v4.6.0
 	github.com/hashicorp/terraform-plugin-framework v1.13.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.16.0
