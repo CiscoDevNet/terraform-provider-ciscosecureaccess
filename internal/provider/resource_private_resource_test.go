@@ -19,6 +19,7 @@ import (
 const (
 	// Test configuration constants
 	testPrivateResourceNamePrefix = "tfAcc"
+	testPrivateResourceFixedName  = "TFP Network Test Resource"
 	testPrivateResourceAddress    = "10.10.110.2/32"
 	testPrivateResourceClientAddr = "10.10.110.2"
 	testPrivateResourceDesc       = "Application used for performing tests"
@@ -26,8 +27,12 @@ const (
 	// Test port and protocol constants
 	testPrivateResourcePortHTTPS  = "443"
 	testPrivateResourcePortUDP    = "5443"
+	testPrivateResourcePortSSH    = "22"
+	testPrivateResourcePortRDP    = "3389"
 	testPrivateResourceProtoHTTPS = "http/https"
 	testPrivateResourceProtoUDP   = "udp"
+	testPrivateResourceProtoSSH   = "ssh"
+	testPrivateResourceProtoRDP   = "rdp-tcp"
 
 	// Access type constants
 	testAccessTypeNetwork = "network"
@@ -83,6 +88,58 @@ func TestPrivateResourceResource_ztna(t *testing.T) {
 	}, minWaitTime)
 }
 
+func TestPrivateResourceResource_networkReportedConfig(t *testing.T) {
+	rateLimitedTest(t, func() {
+		rName := fmt.Sprintf("%s-%s", testPrivateResourceFixedName, acctest.RandStringFromCharSet(8, acctest.CharSetAlphaNum))
+
+		resource.Test(t, resource.TestCase{
+			PreCheck:                 func() { testAccPreCheck(t) },
+			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: testAccPrivateResourceReportedConfig(rName, testPrivateResourcePortHTTPS, testPrivateResourceProtoHTTPS, testPrivateResourcePortSSH, testPrivateResourceProtoSSH),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttrSet(testPrivateResourceName, "id"),
+						resource.TestCheckResourceAttr(testPrivateResourceName, "name", rName),
+						resource.TestCheckResourceAttr(testPrivateResourceName, "description", testPrivateResourceDesc),
+					),
+					ConfigStateChecks: buildNetworkAccessStateChecksWithSelectors(rName, testPrivateResourcePortHTTPS, testPrivateResourceProtoHTTPS, testPrivateResourcePortSSH, testPrivateResourceProtoSSH),
+				},
+				{
+					Config:            testAccPrivateResourceReportedConfig(rName, testPrivateResourcePortHTTPS, testPrivateResourceProtoHTTPS, testPrivateResourcePortSSH, testPrivateResourceProtoSSH),
+					ConfigStateChecks: buildNetworkAccessStateChecksWithSelectors(rName, testPrivateResourcePortHTTPS, testPrivateResourceProtoHTTPS, testPrivateResourcePortSSH, testPrivateResourceProtoSSH),
+				},
+			},
+		})
+	}, minWaitTime)
+}
+
+func TestPrivateResourceResource_networkReportedConfigRDP(t *testing.T) {
+	rateLimitedTest(t, func() {
+		rName := fmt.Sprintf("%s-rdp-%s", testPrivateResourceFixedName, acctest.RandStringFromCharSet(8, acctest.CharSetAlphaNum))
+
+		resource.Test(t, resource.TestCase{
+			PreCheck:                 func() { testAccPreCheck(t) },
+			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: testAccPrivateResourceReportedConfig(rName, testPrivateResourcePortHTTPS, testPrivateResourceProtoHTTPS, testPrivateResourcePortRDP, testPrivateResourceProtoRDP),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttrSet(testPrivateResourceName, "id"),
+						resource.TestCheckResourceAttr(testPrivateResourceName, "name", rName),
+						resource.TestCheckResourceAttr(testPrivateResourceName, "description", testPrivateResourceDesc),
+					),
+					ConfigStateChecks: buildNetworkAccessStateChecksWithSelectors(rName, testPrivateResourcePortHTTPS, testPrivateResourceProtoHTTPS, testPrivateResourcePortRDP, testPrivateResourceProtoRDP),
+				},
+				{
+					Config:            testAccPrivateResourceReportedConfig(rName, testPrivateResourcePortHTTPS, testPrivateResourceProtoHTTPS, testPrivateResourcePortRDP, testPrivateResourceProtoRDP),
+					ConfigStateChecks: buildNetworkAccessStateChecksWithSelectors(rName, testPrivateResourcePortHTTPS, testPrivateResourceProtoHTTPS, testPrivateResourcePortRDP, testPrivateResourceProtoRDP),
+				},
+			},
+		})
+	}, minWaitTime)
+}
+
 // generateTestResourceName creates a unique test resource name
 func generateTestResourceName() string {
 	return fmt.Sprintf("%s%s", testPrivateResourceNamePrefix, acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
@@ -90,23 +147,33 @@ func generateTestResourceName() string {
 
 // buildNetworkAccessStateChecks returns state checks for network access type
 func buildNetworkAccessStateChecks(resourceName string) []statecheck.StateCheck {
+	return buildNetworkAccessStateChecksWithSelectors(resourceName, testPrivateResourcePortHTTPS, testPrivateResourceProtoHTTPS, testPrivateResourcePortUDP, testPrivateResourceProtoUDP)
+}
+
+func buildNetworkAccessStateChecksWithSelectors(resourceName, firstPort, firstProtocol, secondPort, secondProtocol string) []statecheck.StateCheck {
 	return []statecheck.StateCheck{
-		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("addresses").AtSliceIndex(0).AtMapKey("addresses"),
-			knownvalue.ListExact([]knownvalue.Check{knownvalue.StringExact(testPrivateResourceAddress)})),
+		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("addresses"),
+			knownvalue.SetExact([]knownvalue.Check{
+				knownvalue.ObjectExact(map[string]knownvalue.Check{
+					"addresses": knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(testPrivateResourceAddress)}),
+					"traffic_selector": knownvalue.SetExact([]knownvalue.Check{
+						knownvalue.ObjectExact(map[string]knownvalue.Check{
+							"ports":    knownvalue.StringExact(firstPort),
+							"protocol": knownvalue.StringExact(firstProtocol),
+						}),
+						knownvalue.ObjectExact(map[string]knownvalue.Check{
+							"ports":    knownvalue.StringExact(secondPort),
+							"protocol": knownvalue.StringExact(secondProtocol),
+						}),
+					}),
+				}),
+			})),
 		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("access_types"),
-			knownvalue.ListExact([]knownvalue.Check{knownvalue.StringExact(testAccessTypeNetwork)})),
+			knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(testAccessTypeNetwork)})),
 		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("description"),
 			knownvalue.StringExact(testPrivateResourceDesc)),
 		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("name"),
 			knownvalue.StringExact(resourceName)),
-		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("addresses").AtSliceIndex(0).AtMapKey("traffic_selector").AtSliceIndex(0).AtMapKey("ports"),
-			knownvalue.StringExact(testPrivateResourcePortHTTPS)),
-		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("addresses").AtSliceIndex(0).AtMapKey("traffic_selector").AtSliceIndex(0).AtMapKey("protocol"),
-			knownvalue.StringExact(testPrivateResourceProtoHTTPS)),
-		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("addresses").AtSliceIndex(0).AtMapKey("traffic_selector").AtSliceIndex(1).AtMapKey("ports"),
-			knownvalue.StringExact(testPrivateResourcePortUDP)),
-		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("addresses").AtSliceIndex(0).AtMapKey("traffic_selector").AtSliceIndex(1).AtMapKey("protocol"),
-			knownvalue.StringExact(testPrivateResourceProtoUDP)),
 	}
 }
 
@@ -117,19 +184,12 @@ func buildClientAccessStateChecks(resourceName string) []statecheck.StateCheck {
 	// Add client-specific checks
 	clientChecks := []statecheck.StateCheck{
 		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("client_reachable_addresses"),
-			knownvalue.ListExact([]knownvalue.Check{knownvalue.StringExact(testPrivateResourceClientAddr)})),
+			knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(testPrivateResourceClientAddr)})),
 		statecheck.ExpectKnownValue(testPrivateResourceName, tfjsonpath.New("access_types"),
-			knownvalue.ListExact([]knownvalue.Check{knownvalue.StringExact(testAccessTypeClient)})),
+			knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(testAccessTypeClient)})),
 	}
 
-	// Replace the access_types check from network checks with client-specific one
-	filteredChecks := make([]statecheck.StateCheck, 0, len(checks))
-	for _, check := range checks {
-		// Skip the original access_types check since we're adding a client-specific one
-		filteredChecks = append(filteredChecks, check)
-	}
-
-	return append(filteredChecks[:1], append(clientChecks, filteredChecks[2:]...)...)
+	return append(checks[:1], append(clientChecks, checks[2:]...)...)
 }
 
 // testAccPrivateResourceConfig generates Terraform configuration for private resource tests
@@ -156,4 +216,29 @@ resource "ciscosecureaccess_private_resource" "test_resource" {
 		testPrivateResourceAddress,
 		testPrivateResourcePortHTTPS, testPrivateResourceProtoHTTPS,
 		testPrivateResourcePortUDP, testPrivateResourceProtoUDP)
+}
+
+func testAccPrivateResourceReportedConfig(name, firstPort, firstProtocol, secondPort, secondProtocol string) string {
+	return fmt.Sprintf(`
+resource "ciscosecureaccess_private_resource" "test_resource" {
+  name         = "%s"
+  access_types = ["%s"]
+  description  = "%s"
+  addresses = [{
+    addresses = ["%s"]
+    traffic_selector = [
+      { ports = "%s", protocol = "%s" },
+      { ports = "%s", protocol = "%s" }
+    ]
+  }]
+}`,
+		name,
+		testAccessTypeNetwork,
+		testPrivateResourceDesc,
+		testPrivateResourceAddress,
+		firstPort,
+		firstProtocol,
+		secondPort,
+		secondProtocol,
+	)
 }
