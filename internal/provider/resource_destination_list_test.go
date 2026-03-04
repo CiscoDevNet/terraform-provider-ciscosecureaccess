@@ -114,23 +114,23 @@ func TestAccDestinationList_addDestination(t *testing.T) {
 	}, minWaitTime)
 }
 
-func TestAccDestinationList_threeHundredDestinations(t *testing.T) {
+func TestAccDestinationList_sevenHundredDestinations(t *testing.T) {
 	rateLimitedTest(t, func() {
-		testName := generateDestinationListTestName("three_hundred_destinations")
+		testName := generateDestinationListTestName("seven_hundred_destinations")
 
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
 			Steps: []resource.TestStep{
 				{
-					Config: testAccDestinationListThreeHundredDestinationsConfig(testName),
+					Config: testAccDestinationListSevenHundredDestinationsConfig(testName),
 					Check: resource.ComposeAggregateTestCheckFunc(
 						resource.TestCheckResourceAttrSet(testDestinationListResourceName, "id"),
 						resource.TestCheckResourceAttr(testDestinationListResourceName, "name", testName),
-						resource.TestCheckResourceAttr(testDestinationListResourceName, "destinations.#", "300"),
+						resource.TestCheckResourceAttr(testDestinationListResourceName, "destinations.#", "700"),
 					),
 					ConfigStateChecks: []statecheck.StateCheck{
-						statecheck.ExpectKnownValue(testDestinationListResourceName, tfjsonpath.New("destinations"), knownvalue.SetSizeExact(300)),
+						statecheck.ExpectKnownValue(testDestinationListResourceName, tfjsonpath.New("destinations"), knownvalue.SetSizeExact(700)),
 					},
 				},
 			},
@@ -192,11 +192,11 @@ resource "ciscosecureaccess_destination_list" "acceptance_list" {
 }`, name)
 }
 
-// testAccDestinationListThreeHundredDestinationsConfig returns a destination list configuration with 300 destinations
-func testAccDestinationListThreeHundredDestinationsConfig(name string) string {
+// testAccDestinationListSevenHundredDestinationsConfig returns a destination list configuration with 700 destinations
+func testAccDestinationListSevenHundredDestinationsConfig(name string) string {
 	var destinations strings.Builder
 
-	for i := 1; i <= 300; i++ {
+	for i := 1; i <= 700; i++ {
 		destinations.WriteString(fmt.Sprintf(`      {
         comment = "Destination %d managed by TF"
         type = "domain"

@@ -38,6 +38,8 @@ var _ resource.ResourceWithValidateConfig = (*destinationListResource)(nil)
 const (
 	// Bundle type ID for destination lists
 	defaultBundleTypeID = 2
+	// Maximum destinations per create API request
+	maxDestinationsPerRequest = 500
 	// Number of destination records to request per page
 	defaultDestinationsPageLimit = 100
 	// HTTP status codes
@@ -355,6 +357,14 @@ func isValidDomain(value string) bool {
 	return true
 }
 
+func minInt(a int, b int) int {
+	if a < b {
+		return a
+	}
+
+	return b
+}
+
 // Create creates a new destination list resource
 func (r *destinationListResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan destinationListResourceModel
@@ -380,13 +390,16 @@ func (r *destinationListResource) Create(ctx context.Context, req resource.Creat
 		modeledDestinations[i].SetDestination(planDestinationList[i].Destination.ValueString())
 	}
 
+	initialDestinationsCount := minInt(len(modeledDestinations), maxDestinationsPerRequest)
+	initialDestinations := modeledDestinations[:initialDestinationsCount]
+
 	var bundleTypeID destinationlists.BundleTypeId = defaultBundleTypeID
 	createRequest := destinationlists.DestinationListCreate{
 		Access:       "none",
 		IsGlobal:     false,
 		Name:         plan.Name.ValueString(),
 		BundleTypeId: &bundleTypeID,
-		Destinations: modeledDestinations,
+		Destinations: initialDestinations,
 	}
 
 	createResp, httpRes, err := r.client.DestinationListsAPI.CreateDestinationList(ctx).DestinationListCreate(createRequest).Execute()
@@ -411,6 +424,29 @@ func (r *destinationListResource) Create(ctx context.Context, req resource.Creat
 	})
 
 	plan.Id = types.Int64Value(createResp.Data.Id)
+
+	// Page through destinations 500 at a time.  Destinations API spec does not advertise maxItems
+	if len(modeledDestinations) > maxDestinationsPerRequest {
+		for start := maxDestinationsPerRequest; start < len(planDestinationList); start += maxDestinationsPerRequest {
+			end := minInt(start+maxDestinationsPerRequest, len(planDestinationList))
+			remainingDestinations := make([]destinationlists.DestinationCreateObject, 0, end-start)
+
+			for i := start; i < end; i++ {
+				newDestination := destinationlists.NewDestinationCreateObject(planDestinationList[i].Destination.ValueString())
+				newDestination.SetComment(planDestinationList[i].Comment.ValueString())
+				remainingDestinations = append(remainingDestinations, *newDestination)
+			}
+
+			_, httpRes, err = r.client.DestinationsAPI.CreateDestinations(ctx, plan.Id.ValueInt64()).DestinationCreateObject(remainingDestinations).Execute()
+			if err != nil {
+				resp.Diagnostics.AddError(
+					fmt.Sprintf("HTTP Response: %v", httpRes),
+					fmt.Sprintf("Error creating additional destinations for destination list %s: %s", plan.Name.ValueString(), err.Error()),
+				)
+				return
+			}
+		}
+	}
 
 	diags = plan.UpdateDestinations(ctx, &r.client)
 	if diags.HasError() {
