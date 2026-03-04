@@ -9,6 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -17,6 +20,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
@@ -28,6 +32,7 @@ import (
 )
 
 var _ resource.Resource = (*destinationListResource)(nil)
+var _ resource.ResourceWithValidateConfig = (*destinationListResource)(nil)
 
 // Constants for destination list resource
 const (
@@ -41,6 +46,8 @@ const (
 	// Error messages
 	destinationListNotFoundError = "\"statusCode\":404,\"error\":\"Not Found\""
 )
+
+var domainLabelRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 
 // NewDestinationListResource creates a new destination list resource
 func NewDestinationListResource() resource.Resource {
@@ -157,11 +164,11 @@ func (d destinationModel) DestinationAttributesNested() map[string]schema.Attrib
 			Computed:    true,
 		},
 		"destination": schema.StringAttribute{
-			Description: "A domain, URL, or IP.",
+			Description: "A domain, url, or IP.",
 			Required:    true,
 		},
 		"type": schema.StringAttribute{
-			Description: "The type of the destination ('DOMAIN', 'URL', 'IPV4')",
+			Description: "The type of the destination ('domain', 'url', 'ipv4')",
 			Required:    true,
 			Validators: []validator.String{
 				stringvalidator.OneOf(d.DestinationTypes()...),
@@ -222,6 +229,130 @@ func (r *destinationListResource) Configure(ctx context.Context, req resource.Co
 	}
 
 	r.client = *req.ProviderData.(*client.SSEClientFactory).GetDestinationListsClient(ctx)
+}
+
+func (r *destinationListResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var data destinationListResourceModel
+
+	diags := req.Config.Get(ctx, &data)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if data.Destinations.IsNull() || data.Destinations.IsUnknown() {
+		return
+	}
+
+	var destinations []destinationModel
+	diags = data.Destinations.ElementsAs(ctx, &destinations, true)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	for i := range destinations {
+		if destinations[i].Type.IsNull() || destinations[i].Type.IsUnknown() || destinations[i].Destination.IsNull() || destinations[i].Destination.IsUnknown() {
+			continue
+		}
+
+		err := validateDestinationForType(destinations[i].Type.ValueString(), destinations[i].Destination.ValueString())
+		if err == nil {
+			continue
+		}
+
+		resp.Diagnostics.AddAttributeError(
+			path.Root("destinations"),
+			"Invalid destination for destination type",
+			fmt.Sprintf("Element %d: destination %q is invalid for type %q: %s", i+1, destinations[i].Destination.ValueString(), destinations[i].Type.ValueString(), err.Error()),
+		)
+	}
+}
+
+func allowedDestinationTypeByName(name string) (destinationlists.ModelType, bool) {
+	for _, allowed := range destinationlists.AllowedModelTypeEnumValues {
+		if strings.EqualFold(string(allowed), name) {
+			return allowed, true
+		}
+	}
+
+	return "", false
+}
+
+func validateDestinationForType(destinationType string, destination string) error {
+	resolvedType, ok := allowedDestinationTypeByName(destinationType)
+	if !ok {
+		return nil
+	}
+
+	ipv4Type, hasIPv4 := allowedDestinationTypeByName("ipv4")
+	domainType, hasDomain := allowedDestinationTypeByName("domain")
+	urlType, hasurl := allowedDestinationTypeByName("url")
+
+	if hasIPv4 && resolvedType == ipv4Type {
+		if !isValidIPv4(destination) {
+			return fmt.Errorf("must be a valid IPv4 address")
+		}
+		return nil
+	}
+
+	if hasDomain && resolvedType == domainType {
+		if !isValidDomain(destination) {
+			return fmt.Errorf("must be a valid domain name")
+		}
+		return nil
+	}
+
+	if hasurl && resolvedType == urlType {
+		parsedurl, err := url.ParseRequestURI(destination)
+		if err != nil || parsedurl == nil || parsedurl.Scheme == "" || parsedurl.Host == "" {
+			return fmt.Errorf("must be a valid url including scheme and host")
+		}
+
+		if strings.Trim(parsedurl.Path, "/") == "" {
+			recommendedType := "domain"
+			if hasDomain {
+				recommendedType = string(domainType)
+			}
+			return fmt.Errorf("url must include a non-empty path; use type %q for host-only destinations", recommendedType)
+		}
+	}
+
+	return nil
+}
+
+func isValidIPv4(value string) bool {
+	parsed := net.ParseIP(value)
+	return parsed != nil && parsed.To4() != nil
+}
+
+func isValidDomain(value string) bool {
+	if value == "" || len(value) > 253 {
+		return false
+	}
+
+	if strings.Contains(value, "://") || strings.ContainsAny(value, "/:?&#") {
+		return false
+	}
+
+	trimmed := strings.TrimSuffix(value, ".")
+	labels := strings.Split(trimmed, ".")
+
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 {
+			return false
+		}
+
+		if !domainLabelRegex.MatchString(label) {
+			return false
+		}
+
+		if strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Create creates a new destination list resource
