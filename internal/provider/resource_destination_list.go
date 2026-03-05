@@ -325,7 +325,16 @@ func validateDestinationForType(destinationType string, destination string) erro
 
 func isValidIPv4(value string) bool {
 	parsed := net.ParseIP(value)
-	return parsed != nil && parsed.To4() != nil
+	if parsed != nil && parsed.To4() != nil {
+		return true
+	}
+
+	_, cidr, err := net.ParseCIDR(value)
+	if err != nil || cidr == nil {
+		return false
+	}
+
+	return cidr.IP.To4() != nil
 }
 
 func isValidDomain(value string) bool {

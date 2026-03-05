@@ -103,10 +103,10 @@ func TestAccDestinationList_addDestination(t *testing.T) {
 					Check: resource.ComposeAggregateTestCheckFunc(
 						resource.TestCheckResourceAttrSet(testDestinationListResourceName, "id"),
 						resource.TestCheckResourceAttr(testDestinationListResourceName, "name", testName),
-						resource.TestCheckResourceAttr(testDestinationListResourceName, "destinations.#", "3"),
+						resource.TestCheckResourceAttr(testDestinationListResourceName, "destinations.#", "7"),
 					),
 					ConfigStateChecks: []statecheck.StateCheck{
-						statecheck.ExpectKnownValue(testDestinationListResourceName, tfjsonpath.New("destinations"), knownvalue.SetSizeExact(3)),
+						statecheck.ExpectKnownValue(testDestinationListResourceName, tfjsonpath.New("destinations"), knownvalue.SetSizeExact(7)),
 					},
 				},
 			},
@@ -154,12 +154,12 @@ resource "ciscosecureaccess_destination_list" "acceptance_list" {
     name = "%s"
     destinations = [
       {
-        comment = "First test destination managed by TF"
+        comment = "IP destination"
         type = "ipv4"
         destination = "127.0.0.2"
       },
       {
-        comment = "Second test destination managed by TF"
+        comment = "URL destination"
         type = "url"
         destination = "http://example.com/test"
       },
@@ -174,19 +174,39 @@ resource "ciscosecureaccess_destination_list" "acceptance_list" {
     name = "%s"
     destinations = [
       {
-        comment = "First test destination managed by TF"
+        comment = "IP destination"
         type = "ipv4"
         destination = "127.0.0.2"
       },
       {
-        comment = "Second test destination managed by TF"
+        comment = "URL destination"
         type = "url"
         destination = "http://example.com/test"
       },
       {
-        comment = "Third test destination to test state update"
+        comment = "CIDR destination"
+        type = "ipv4"
+        destination = "192.168.1.0/24"
+      },
+      {
+        comment = "Domain destination"
+        type = "domain"
+        destination = "bar.baz"
+      },
+      {
+        comment = "Sub domain destination"
         type = "domain"
         destination = "foo.bar.baz"
+      },
+      {
+        comment = "Country code domain destination"
+        type = "domain"
+        destination = "us"
+      },
+      {
+        comment = "TLD destination"
+        type = "domain"
+        destination = "com"
       },
     ]
 }`, name)

@@ -19,6 +19,10 @@ func TestValidateDestinationForType_ipv4(t *testing.T) {
 		t.Fatalf("expected valid IPv4 destination, got error: %v", err)
 	}
 
+	if err := validateDestinationForType(string(ipv4Type), "192.168.0.0/16"); err != nil {
+		t.Fatalf("expected valid IPv4 destination, got error: %v", err)
+	}
+
 	if err := validateDestinationForType(string(ipv4Type), "example.com"); err == nil {
 		t.Fatal("expected invalid IPv4 destination error, got nil")
 	}
@@ -60,5 +64,34 @@ func TestValidateDestinationForType_url(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "domain") {
 		t.Fatalf("expected domain recommendation in error, got: %v", err)
+	}
+}
+
+func TestValidateDestinationExtraCases(t *testing.T) {
+	// domain with two labels should be valid
+	domainType, ok := allowedDestinationTypeByName("domain")
+	if !ok {
+		t.Fatal("expected domain type in destinationlists.AllowedModelTypeEnumValues")
+	}
+
+	if err := validateDestinationForType(string(domainType), "bar.gaz"); err != nil {
+		t.Fatalf("expected valid domain destination 'bar.gaz', got error: %v", err)
+	}
+
+	// single-label domains should be valid
+	if err := validateDestinationForType(string(domainType), "us"); err != nil {
+		t.Fatalf("expected valid domain destination 'us', got error: %v", err)
+	}
+	if err := validateDestinationForType(string(domainType), "com"); err != nil {
+		t.Fatalf("expected valid domain destination 'com', got error: %v", err)
+	}
+
+	// CIDR block should be valid for IPV4 type
+	ipv4Type, ok := allowedDestinationTypeByName("ipv4")
+	if !ok {
+		t.Fatal("expected ipv4 type in destinationlists.AllowedModelTypeEnumValues")
+	}
+	if err := validateDestinationForType(string(ipv4Type), "192.168.1.0/24"); err != nil {
+		t.Fatalf("expected valid IPv4/CIDR destination '192.168.1.0/24', got error: %v", err)
 	}
 }
