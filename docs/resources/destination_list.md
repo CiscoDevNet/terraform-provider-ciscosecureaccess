@@ -55,8 +55,8 @@ resource "ciscosecureaccess_destination_list" "test_dl1" {
 
 Required:
 
-- `destination` (String) A domain, URL, or IP.
-- `type` (String) The type of the destination ('DOMAIN', 'URL', 'IPV4')
+- `destination` (String) A domain, url, or IP.
+- `type` (String) The type of the destination ('domain', 'url', 'ipv4')
 
 Optional:
 
