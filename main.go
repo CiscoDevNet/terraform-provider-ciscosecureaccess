@@ -25,7 +25,7 @@ func main() {
 		context.Background(),
 		provider.New(version),
 		providerserver.ServeOpts{
-			Address: "registry.terraform.io/<namespace>/<provider_name>",
+			Address: "registry.terraform.io/CiscoDevNet/ciscosecureaccess",
 		},
 	)
 
