@@ -10,11 +10,14 @@ import (
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
 	"github.com/CiscoDevNet/go-ciscosecureaccess/internalnetworks"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
@@ -92,14 +95,35 @@ func (r *internalNetworkResource) Schema(_ context.Context, _ resource.SchemaReq
 			"site_id": schema.Int64Attribute{
 				Description: "ID of the Site to associate with this Internal Network. Specify one of: site_id, network_id, or tunnel_id.",
 				Optional:    true,
+				Validators: []validator.Int64{
+					int64validator.ExactlyOneOf(
+						path.MatchRoot("site_id"),
+						path.MatchRoot("network_id"),
+						path.MatchRoot("tunnel_id"),
+					),
+				},
 			},
 			"network_id": schema.Int64Attribute{
 				Description: "ID of the Network to associate with this Internal Network. Specify one of: site_id, network_id, or tunnel_id.",
 				Optional:    true,
+				Validators: []validator.Int64{
+					int64validator.ExactlyOneOf(
+						path.MatchRoot("site_id"),
+						path.MatchRoot("network_id"),
+						path.MatchRoot("tunnel_id"),
+					),
+				},
 			},
 			"tunnel_id": schema.Int64Attribute{
 				Description: "ID of the Network Tunnel Group to associate with this Internal Network. Specify one of: site_id, network_id, or tunnel_id.",
 				Optional:    true,
+				Validators: []validator.Int64{
+					int64validator.ExactlyOneOf(
+						path.MatchRoot("site_id"),
+						path.MatchRoot("network_id"),
+						path.MatchRoot("tunnel_id"),
+					),
+				},
 			},
 			"site_name": schema.StringAttribute{
 				Description: "Name of the Site associated with this Internal Network.",
