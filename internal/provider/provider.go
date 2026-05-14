@@ -203,9 +203,11 @@ func (p *ciscosecureaccessProvider) Resources(_ context.Context) []func() resour
 	return []func() resource.Resource{
 		NewAccessPolicyResource,
 		NewDestinationListResource,
+		NewInternalNetworkResource,
 		NewNetworkTunnelGroupResource,
 		NewGlobalSettingsResource,
 		NewPrivateResourceResource,
 		NewResourceConnectorAgentResource,
+		NewSiteResource,
 	}
 }
