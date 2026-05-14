@@ -156,12 +156,12 @@ func (r *siteResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	tflog.Debug(ctx, "Reading site", map[string]interface{}{"id": siteId})
 
 	getResp, httpRes, err := r.client.SitesAPI.GetSite(ctx, siteId).Execute()
-	if httpRes != nil && httpRes.StatusCode == 404 {
-		tflog.Info(ctx, "Site not found, removing from state", map[string]interface{}{"id": siteId})
-		resp.State.RemoveResource(ctx)
-		return
-	}
 	if err != nil {
+		if httpRes != nil && httpRes.StatusCode == 404 {
+			tflog.Info(ctx, "Site not found, removing from state", map[string]interface{}{"id": siteId})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError(
 			"Error reading Site",
 			fmt.Sprintf("Could not read site ID %d: %s", siteId, err),
@@ -220,10 +220,10 @@ func (r *siteResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	tflog.Debug(ctx, "Deleting site", map[string]interface{}{"id": siteId})
 
 	httpRes, err := r.client.SitesAPI.DeleteSite(ctx, siteId).Execute()
-	if httpRes != nil && httpRes.StatusCode == 404 {
-		return
-	}
 	if err != nil {
+		if httpRes != nil && httpRes.StatusCode == 404 {
+			return
+		}
 		resp.Diagnostics.AddError(
 			"Error deleting Site",
 			fmt.Sprintf("Could not delete site ID %d: %s", siteId, err),

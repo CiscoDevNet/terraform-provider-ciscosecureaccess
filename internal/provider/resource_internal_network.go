@@ -177,12 +177,12 @@ func (r *internalNetworkResource) Read(ctx context.Context, req resource.ReadReq
 	tflog.Debug(ctx, "Reading internal network", map[string]interface{}{"id": networkId})
 
 	getResp, httpRes, err := r.client.InternalNetworksAPI.GetInternalNetwork(ctx, networkId).Execute()
-	if httpRes != nil && httpRes.StatusCode == 404 {
-		tflog.Info(ctx, "Internal network not found, removing from state", map[string]interface{}{"id": networkId})
-		resp.State.RemoveResource(ctx)
-		return
-	}
 	if err != nil {
+		if httpRes != nil && httpRes.StatusCode == 404 {
+			tflog.Info(ctx, "Internal network not found, removing from state", map[string]interface{}{"id": networkId})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError(
 			"Error reading Internal Network",
 			fmt.Sprintf("Could not read internal network ID %d: %s", networkId, err),
@@ -256,10 +256,10 @@ func (r *internalNetworkResource) Delete(ctx context.Context, req resource.Delet
 	tflog.Debug(ctx, "Deleting internal network", map[string]interface{}{"id": networkId})
 
 	httpRes, err := r.client.InternalNetworksAPI.DeleteInternalNetwork(ctx, networkId).Execute()
-	if httpRes != nil && httpRes.StatusCode == 404 {
-		return
-	}
 	if err != nil {
+		if httpRes != nil && httpRes.StatusCode == 404 {
+			return
+		}
 		resp.Diagnostics.AddError(
 			"Error deleting Internal Network",
 			fmt.Sprintf("Could not delete internal network ID %d: %s", networkId, err),
