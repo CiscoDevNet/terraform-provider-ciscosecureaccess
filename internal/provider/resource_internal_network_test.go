@@ -89,10 +89,15 @@ func TestInternalNetworkResource_update(t *testing.T) {
 
 func testAccInternalNetworkBasicConfig(name string) string {
 	return fmt.Sprintf(`
+resource "ciscosecureaccess_site" "test_site" {
+  name = %q
+}
+
 resource "ciscosecureaccess_internal_network" "test_resource" {
   name          = %q
   ip_address    = %q
   prefix_length = %d
+  site_id       = ciscosecureaccess_site.test_site.id
 }
-`, name, testInternalNetworkIPAddress, testInternalNetworkPrefixLength)
+`, name+"-site", name, testInternalNetworkIPAddress, testInternalNetworkPrefixLength)
 }
