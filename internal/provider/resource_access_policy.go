@@ -368,9 +368,8 @@ func formatCreateAccessPolicyRequest(ctx context.Context, plan *accessPolicyReso
 func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	// Get current state
 	var state accessPolicyResourceModel
-	diags := req.State.Get(ctx, &state)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
-		resp.Diagnostics.Append(diags...)
 		return
 	}
 
