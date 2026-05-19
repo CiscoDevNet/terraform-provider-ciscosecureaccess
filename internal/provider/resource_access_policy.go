@@ -271,12 +271,10 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 	err := retry.Do(
 		func() error {
 			createResp, httpRes, err := r.client.AccessRulesAPI.AddRule(ctx).AddRuleRequest(*ruleDefinition).Execute()
-			if httpRes != nil {
-				defer httpRes.Body.Close()
-			}
 			if err != nil {
 				if httpRes != nil {
 					bodyBytes, _ := io.ReadAll(httpRes.Body)
+					httpRes.Body.Close()
 					bodyStr := string(bodyBytes)
 
 					// Retryable errors
@@ -292,6 +290,9 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 				// Unknown error without response
 				resp.Diagnostics.AddError("Error creating access policy", err.Error())
 				return retry.Unrecoverable(err)
+			}
+			if httpRes != nil {
+				httpRes.Body.Close()
 			}
 
 			respString, _ := json.Marshal(createResp)
