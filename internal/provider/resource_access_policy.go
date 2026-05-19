@@ -270,7 +270,7 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 
 	err := retry.Do(
 		func() error {
-			createResp, httpRes, err := r.client.AccessRulesAPI.AddRule(context.Background()).AddRuleRequest(*ruleDefinition).Execute()
+			createResp, httpRes, err := r.client.AccessRulesAPI.AddRule(ctx).AddRuleRequest(*ruleDefinition).Execute()
 			if httpRes != nil {
 				defer httpRes.Body.Close()
 			}
@@ -310,6 +310,7 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 		},
 		retry.Delay(time.Second*10), // More reasonable delay
 		retry.Attempts(6),
+		retry.Context(ctx),
 	)
 
 	if err != nil {
