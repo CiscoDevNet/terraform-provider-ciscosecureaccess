@@ -474,7 +474,14 @@ func (r *privateResourceResource) Read(ctx context.Context, req resource.ReadReq
 		return
 	}
 
-	policyId, _ := strconv.Atoi(state.ID.ValueString())
+	policyId, idErr := strconv.Atoi(state.ID.ValueString())
+	if idErr != nil {
+		resp.Diagnostics.AddError(
+			"Invalid resource ID",
+			fmt.Sprintf("Could not parse resource ID %q: %s", state.ID.ValueString(), idErr),
+		)
+		return
+	}
 	tflog.Debug(ctx, "Retrieving upstream policy", map[string]interface{}{
 		"policy_id": policyId,
 	})
@@ -660,7 +667,10 @@ func (r *privateResourceResource) updatePrivateResource(ctx context.Context, pla
 		payload.SetCertificateId(*baseline.CertificateId)
 	}
 
-	id, _ := strconv.Atoi(plan.ID.ValueString())
+	id, idErr := strconv.Atoi(plan.ID.ValueString())
+	if idErr != nil {
+		return fmt.Errorf("invalid resource ID %q: %w", plan.ID.ValueString(), idErr)
+	}
 	updateResp, _, err := r.client.PrivateResourcesAPI.PutPrivateResource(ctx, int64(id)).PrivateResourceRequest(*payload).Execute()
 
 	if err != nil {
@@ -689,7 +699,14 @@ func (r *privateResourceResource) Delete(ctx context.Context, req resource.Delet
 		return
 	}
 
-	id, _ := strconv.Atoi(state.ID.ValueString())
+	id, idErr := strconv.Atoi(state.ID.ValueString())
+	if idErr != nil {
+		resp.Diagnostics.AddError(
+			"Invalid resource ID",
+			fmt.Sprintf("Could not parse resource ID %q: %s", state.ID.ValueString(), idErr),
+		)
+		return
+	}
 	tflog.Info(ctx, "Deleting private resource", map[string]interface{}{
 		"resource_id": id,
 	})
