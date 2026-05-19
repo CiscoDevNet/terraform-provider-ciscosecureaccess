@@ -515,7 +515,10 @@ func (r *accessPolicyResource) Update(ctx context.Context, req resource.UpdateRe
 			baseline.RuleSettings,
 		)
 
-		updateRule, _, err := r.client.AccessRulesAPI.PutRule(ctx, plan.ID.ValueInt64()).PutRuleRequest(*payload).Execute()
+		updateRule, httpRes, err := r.client.AccessRulesAPI.PutRule(ctx, plan.ID.ValueInt64()).PutRuleRequest(*payload).Execute()
+		if httpRes != nil {
+			defer httpRes.Body.Close()
+		}
 		if err != nil {
 			resp.Diagnostics.AddError(
 				"Error updating access policy",
