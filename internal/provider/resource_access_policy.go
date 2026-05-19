@@ -405,9 +405,13 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 		case condition.AttributeName.AttributeNameDestination != nil:
 			switch string(*condition.AttributeName.AttributeNameDestination) {
 			case "umbrella.destination.private_resource_ids":
-				state.PrivateResourceIds, _ = types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				v, d := types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				resp.Diagnostics.Append(d...)
+				state.PrivateResourceIds = v
 			case "umbrella.destination.destination_list_ids":
-				state.DestinationListIds, _ = types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				v, d := types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				resp.Diagnostics.Append(d...)
+				state.DestinationListIds = v
 			case "umbrella.destination.private_resource_types":
 				var typeNames []string
 				for _, typeId := range *condition.AttributeValue.ArrayOfString {
@@ -415,11 +419,15 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 						typeNames = append(typeNames, PRIVATE_APPS_SCHEMA)
 					}
 				}
-				state.PrivateDestinationTypes, _ = types.SetValueFrom(ctx, types.StringType, typeNames)
+				v, d := types.SetValueFrom(ctx, types.StringType, typeNames)
+				resp.Diagnostics.Append(d...)
+				state.PrivateDestinationTypes = v
 			case "umbrella.destination.all":
 				if condition.AttributeValue.Bool != nil && *condition.AttributeValue.Bool {
 					publicTypes := []string{PUBLIC_INTERNET_SCHEMA}
-					state.PublicDestinationTypes, _ = types.SetValueFrom(ctx, types.StringType, publicTypes)
+					v, d := types.SetValueFrom(ctx, types.StringType, publicTypes)
+					resp.Diagnostics.Append(d...)
+					state.PublicDestinationTypes = v
 				}
 			}
 		case condition.AttributeName.AttributeNameSource != nil:
@@ -433,9 +441,13 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 						typeNames = append(typeNames, NETWORKS)
 					}
 				}
-				state.SourceTypes, _ = types.SetValueFrom(ctx, types.StringType, typeNames)
+				v, d := types.SetValueFrom(ctx, types.StringType, typeNames)
+				resp.Diagnostics.Append(d...)
+				state.SourceTypes = v
 			case "umbrella.source.identity_ids":
-				state.SourceIds, _ = types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				v, d := types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				resp.Diagnostics.Append(d...)
+				state.SourceIds = v
 			}
 		}
 	}
