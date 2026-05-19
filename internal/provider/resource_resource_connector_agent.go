@@ -295,7 +295,9 @@ func (r *resourceConnectorAgentResource) processConnectorResponse(ctx context.Co
 
 			state := *data
 			state.LoadFromAPI(ctx, agent)
-			r.Synchronize(ctx, &state, data)
+			if err := r.Synchronize(ctx, &state, data); err != nil {
+				return fmt.Errorf("failed to synchronize connector agent: %w", err)
+			}
 			*data = state
 
 			tflog.Info(ctx, "Successfully configured resource connector agent", map[string]interface{}{
@@ -409,7 +411,13 @@ func (r *resourceConnectorAgentResource) Update(ctx context.Context, req resourc
 	})
 
 	// Update API call logic
-	r.Synchronize(ctx, &state, &plan)
+	if err := r.Synchronize(ctx, &state, &plan); err != nil {
+		resp.Diagnostics.AddError(
+			"Error updating resource connector agent",
+			fmt.Sprintf("Failed to synchronize connector agent %d: %v", agentID, err),
+		)
+		return
+	}
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -419,8 +427,10 @@ func (r *resourceConnectorAgentResource) Update(ctx context.Context, req resourc
 	})
 }
 
-// Synchronize updates the resource connector agent based on plan changes
-func (r *resourceConnectorAgentResource) Synchronize(ctx context.Context, state *resourceConnectorAgentResourceModel, plan *resourceConnectorAgentResourceModel) {
+// Synchronize updates the resource connector agent based on plan changes.
+// It returns an error if any patch operation fails so callers can gate
+// state writes on success and avoid silent state drift.
+func (r *resourceConnectorAgentResource) Synchronize(ctx context.Context, state *resourceConnectorAgentResourceModel, plan *resourceConnectorAgentResourceModel) error {
 	agentID := state.ID.ValueInt64()
 
 	// Update confirmed status if changed
@@ -435,10 +445,10 @@ func (r *resourceConnectorAgentResource) Synchronize(ctx context.Context, state 
 				"agent_id": agentID,
 				"error":    err.Error(),
 			})
-		} else {
-			state.Confirmed = plan.Confirmed
-			tflog.Debug(ctx, "Successfully updated confirmed status")
+			return fmt.Errorf("failed to update confirmed status: %w", err)
 		}
+		state.Confirmed = plan.Confirmed
+		tflog.Debug(ctx, "Successfully updated confirmed status")
 	}
 
 	// Update enabled status if changed
@@ -453,11 +463,13 @@ func (r *resourceConnectorAgentResource) Synchronize(ctx context.Context, state 
 				"agent_id": agentID,
 				"error":    err.Error(),
 			})
-		} else {
-			state.Enabled = plan.Enabled
-			tflog.Debug(ctx, "Successfully updated enabled status")
+			return fmt.Errorf("failed to update enabled status: %w", err)
 		}
+		state.Enabled = plan.Enabled
+		tflog.Debug(ctx, "Successfully updated enabled status")
 	}
+
+	return nil
 }
 
 // patchConnectorField updates a single field on the connector using PATCH operation
