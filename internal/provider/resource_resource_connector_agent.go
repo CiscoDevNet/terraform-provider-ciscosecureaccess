@@ -204,12 +204,11 @@ func (r *resourceConnectorAgentResource) findAndConfigureAgent(ctx context.Conte
 	return retry.Do(
 		func() error {
 			agents, httpRes, err := r.client.ConnectorsAPI.ListConnectors(ctx).Filters(filters).Execute()
-			if httpRes != nil && httpRes.Body != nil {
-				httpRes.Body.Close()
-			}
-
 			if err != nil {
 				return r.handleListConnectorsError(ctx, httpRes, err)
+			}
+			if httpRes != nil && httpRes.Body != nil {
+				httpRes.Body.Close()
 			}
 
 			return r.processConnectorResponse(ctx, agents, data, filters)
@@ -225,6 +224,7 @@ func (r *resourceConnectorAgentResource) handleListConnectorsError(ctx context.C
 	var bodyBytes []byte
 	if httpRes != nil && httpRes.Body != nil {
 		bodyBytes, _ = io.ReadAll(httpRes.Body)
+		httpRes.Body.Close()
 	}
 
 	statusCode := 0
