@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
+	"github.com/CiscoDevNet/go-ciscosecureaccess/internalnetworks"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
@@ -18,6 +20,149 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
+
+func ptrInt64(v int64) *int64    { return &v }
+func ptrString(v string) *string { return &v }
+
+func TestFlattenInternalNetworkObject_SiteIdSet(t *testing.T) {
+	network := &internalnetworks.InternalNetworkObject{
+		OriginId:     42,
+		Name:         "site-net",
+		IpAddress:    "10.0.0.0",
+		PrefixLength: 24,
+		SiteId:       ptrInt64(101),
+		SiteName:     ptrString("hq-site"),
+	}
+	model := &internalNetworkResourceModel{}
+	flattenInternalNetworkObject(network, model)
+
+	if model.Id.ValueInt64() != 42 {
+		t.Errorf("Id = %d, want 42", model.Id.ValueInt64())
+	}
+	if model.Name.ValueString() != "site-net" {
+		t.Errorf("Name = %q, want %q", model.Name.ValueString(), "site-net")
+	}
+	if model.IpAddress.ValueString() != "10.0.0.0" {
+		t.Errorf("IpAddress = %q", model.IpAddress.ValueString())
+	}
+	if model.PrefixLength.ValueInt64() != 24 {
+		t.Errorf("PrefixLength = %d", model.PrefixLength.ValueInt64())
+	}
+	if model.SiteId.ValueInt64() != 101 {
+		t.Errorf("SiteId = %d, want 101", model.SiteId.ValueInt64())
+	}
+	if !model.NetworkId.IsNull() {
+		t.Errorf("NetworkId should be null, got %v", model.NetworkId)
+	}
+	if !model.TunnelId.IsNull() {
+		t.Errorf("TunnelId should be null, got %v", model.TunnelId)
+	}
+	if model.SiteName.ValueString() != "hq-site" {
+		t.Errorf("SiteName = %q, want %q", model.SiteName.ValueString(), "hq-site")
+	}
+	if !model.NetworkName.IsNull() {
+		t.Errorf("NetworkName should be null")
+	}
+	if !model.TunnelName.IsNull() {
+		t.Errorf("TunnelName should be null")
+	}
+}
+
+func TestFlattenInternalNetworkObject_NetworkIdSet(t *testing.T) {
+	network := &internalnetworks.InternalNetworkObject{
+		OriginId:     7,
+		Name:         "net-net",
+		IpAddress:    "172.16.0.0",
+		PrefixLength: 16,
+		NetworkId:    ptrInt64(202),
+		NetworkName:  ptrString("branch-net"),
+	}
+	model := &internalNetworkResourceModel{}
+	flattenInternalNetworkObject(network, model)
+
+	if model.NetworkId.ValueInt64() != 202 {
+		t.Errorf("NetworkId = %d, want 202", model.NetworkId.ValueInt64())
+	}
+	if !model.SiteId.IsNull() {
+		t.Errorf("SiteId should be null")
+	}
+	if !model.TunnelId.IsNull() {
+		t.Errorf("TunnelId should be null")
+	}
+	if model.NetworkName.ValueString() != "branch-net" {
+		t.Errorf("NetworkName = %q", model.NetworkName.ValueString())
+	}
+	if !model.SiteName.IsNull() {
+		t.Errorf("SiteName should be null")
+	}
+	if !model.TunnelName.IsNull() {
+		t.Errorf("TunnelName should be null")
+	}
+}
+
+func TestFlattenInternalNetworkObject_TunnelIdSet(t *testing.T) {
+	network := &internalnetworks.InternalNetworkObject{
+		OriginId:     99,
+		Name:         "tun-net",
+		IpAddress:    "192.168.0.0",
+		PrefixLength: 24,
+		TunnelId:     ptrInt64(303),
+		TunnelName:   ptrString("ntg-1"),
+	}
+	model := &internalNetworkResourceModel{}
+	flattenInternalNetworkObject(network, model)
+
+	if model.TunnelId.ValueInt64() != 303 {
+		t.Errorf("TunnelId = %d, want 303", model.TunnelId.ValueInt64())
+	}
+	if !model.SiteId.IsNull() {
+		t.Errorf("SiteId should be null")
+	}
+	if !model.NetworkId.IsNull() {
+		t.Errorf("NetworkId should be null")
+	}
+	if model.TunnelName.ValueString() != "ntg-1" {
+		t.Errorf("TunnelName = %q", model.TunnelName.ValueString())
+	}
+	if !model.SiteName.IsNull() {
+		t.Errorf("SiteName should be null")
+	}
+	if !model.NetworkName.IsNull() {
+		t.Errorf("NetworkName should be null")
+	}
+}
+
+func TestFlattenInternalNetworkObject_AllNamesAbsent(t *testing.T) {
+	network := &internalnetworks.InternalNetworkObject{
+		OriginId:     1,
+		Name:         "bare",
+		IpAddress:    "10.1.1.0",
+		PrefixLength: 24,
+		SiteId:       ptrInt64(1),
+	}
+	model := &internalNetworkResourceModel{
+		SiteId:    types.Int64Unknown(),
+		NetworkId: types.Int64Unknown(),
+		TunnelId:  types.Int64Unknown(),
+	}
+	flattenInternalNetworkObject(network, model)
+
+	if !model.SiteName.IsNull() {
+		t.Errorf("SiteName should be null when absent")
+	}
+	if !model.NetworkName.IsNull() {
+		t.Errorf("NetworkName should be null when absent")
+	}
+	if !model.TunnelName.IsNull() {
+		t.Errorf("TunnelName should be null when absent")
+	}
+	if !model.NetworkId.IsNull() {
+		t.Errorf("NetworkId should be null when unset in response and unknown in model")
+	}
+	if !model.TunnelId.IsNull() {
+		t.Errorf("TunnelId should be null when unset in response and unknown in model")
+	}
+}
 
 // Test constants for internal network resource tests
 const (
