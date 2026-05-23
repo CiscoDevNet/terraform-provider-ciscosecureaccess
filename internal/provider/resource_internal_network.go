@@ -7,9 +7,12 @@ package provider
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
 	"github.com/CiscoDevNet/go-ciscosecureaccess/internalnetworks"
+	"github.com/avast/retry-go/v4"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -170,12 +173,43 @@ func (r *internalNetworkResource) Create(ctx context.Context, req resource.Creat
 		createRequest.SetTunnelId(v)
 	}
 
-	createResp, _, err := r.client.InternalNetworksAPI.CreateInternalNetwork(ctx).CreateInternalNetworkRequest(createRequest).Execute()
+	var createResp *internalnetworks.InternalNetworkObject
+	err := retry.Do(
+		func() error {
+			var httpRes *http.Response
+			var err error
+			createResp, httpRes, err = r.client.InternalNetworksAPI.CreateInternalNetwork(ctx).CreateInternalNetworkRequest(createRequest).Execute()
+			if err != nil {
+				if httpRes != nil {
+					bodyBytes, _ := io.ReadAll(httpRes.Body)
+					if httpRes.StatusCode == 409 || httpRes.StatusCode == 429 {
+						return fmt.Errorf("retryable error (status %d): %v - %s", httpRes.StatusCode, err, string(bodyBytes))
+					}
+					resp.Diagnostics.AddError(
+						"Error creating Internal Network",
+						fmt.Sprintf("Could not create internal network '%s': %s", plan.Name.ValueString(), err),
+					)
+					return retry.Unrecoverable(err)
+				}
+				resp.Diagnostics.AddError(
+					"Error creating Internal Network",
+					fmt.Sprintf("Could not create internal network '%s': %s", plan.Name.ValueString(), err),
+				)
+				return retry.Unrecoverable(err)
+			}
+			return nil
+		},
+		retry.Attempts(retryMaxAttempts),
+		retry.Delay(retryBaseDelay),
+		retry.Context(ctx),
+	)
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Error creating Internal Network",
-			fmt.Sprintf("Could not create internal network '%s': %s", plan.Name.ValueString(), err),
-		)
+		if !resp.Diagnostics.HasError() {
+			resp.Diagnostics.AddError(
+				"Error creating Internal Network",
+				fmt.Sprintf("Could not create internal network '%s': %s", plan.Name.ValueString(), err),
+			)
+		}
 		return
 	}
 
@@ -252,12 +286,43 @@ func (r *internalNetworkResource) Update(ctx context.Context, req resource.Updat
 		updateRequest.SetTunnelId(v)
 	}
 
-	updateResp, _, err := r.client.InternalNetworksAPI.UpdateInternalNetwork(ctx, networkId).CreateInternalNetworkRequest(updateRequest).Execute()
+	var updateResp *internalnetworks.InternalNetworkObject
+	err := retry.Do(
+		func() error {
+			var httpRes *http.Response
+			var err error
+			updateResp, httpRes, err = r.client.InternalNetworksAPI.UpdateInternalNetwork(ctx, networkId).CreateInternalNetworkRequest(updateRequest).Execute()
+			if err != nil {
+				if httpRes != nil {
+					bodyBytes, _ := io.ReadAll(httpRes.Body)
+					if httpRes.StatusCode == 409 || httpRes.StatusCode == 429 {
+						return fmt.Errorf("retryable error (status %d): %v - %s", httpRes.StatusCode, err, string(bodyBytes))
+					}
+					resp.Diagnostics.AddError(
+						"Error updating Internal Network",
+						fmt.Sprintf("Could not update internal network ID %d: %s", networkId, err),
+					)
+					return retry.Unrecoverable(err)
+				}
+				resp.Diagnostics.AddError(
+					"Error updating Internal Network",
+					fmt.Sprintf("Could not update internal network ID %d: %s", networkId, err),
+				)
+				return retry.Unrecoverable(err)
+			}
+			return nil
+		},
+		retry.Attempts(retryMaxAttempts),
+		retry.Delay(retryBaseDelay),
+		retry.Context(ctx),
+	)
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Error updating Internal Network",
-			fmt.Sprintf("Could not update internal network ID %d: %s", networkId, err),
-		)
+		if !resp.Diagnostics.HasError() {
+			resp.Diagnostics.AddError(
+				"Error updating Internal Network",
+				fmt.Sprintf("Could not update internal network ID %d: %s", networkId, err),
+			)
+		}
 		return
 	}
 
@@ -279,15 +344,48 @@ func (r *internalNetworkResource) Delete(ctx context.Context, req resource.Delet
 	networkId := state.Id.ValueInt64()
 	tflog.Debug(ctx, "Deleting internal network", map[string]interface{}{"id": networkId})
 
-	httpRes, err := r.client.InternalNetworksAPI.DeleteInternalNetwork(ctx, networkId).Execute()
+	var httpRes *http.Response
+	err := retry.Do(
+		func() error {
+			var err error
+			httpRes, err = r.client.InternalNetworksAPI.DeleteInternalNetwork(ctx, networkId).Execute()
+			if httpRes != nil && httpRes.StatusCode == 404 {
+				return nil
+			}
+			if err != nil {
+				if httpRes != nil {
+					bodyBytes, _ := io.ReadAll(httpRes.Body)
+					if httpRes.StatusCode == 409 || httpRes.StatusCode == 429 {
+						return fmt.Errorf("retryable error (status %d): %v - %s", httpRes.StatusCode, err, string(bodyBytes))
+					}
+					resp.Diagnostics.AddError(
+						"Error deleting Internal Network",
+						fmt.Sprintf("Could not delete internal network ID %d: %s", networkId, err),
+					)
+					return retry.Unrecoverable(err)
+				}
+				resp.Diagnostics.AddError(
+					"Error deleting Internal Network",
+					fmt.Sprintf("Could not delete internal network ID %d: %s", networkId, err),
+				)
+				return retry.Unrecoverable(err)
+			}
+			return nil
+		},
+		retry.Attempts(retryMaxAttempts),
+		retry.Delay(retryBaseDelay),
+		retry.Context(ctx),
+	)
+	if httpRes != nil && httpRes.StatusCode == 404 {
+		return
+	}
 	if err != nil {
-		if httpRes != nil && httpRes.StatusCode == 404 {
-			return
+		if !resp.Diagnostics.HasError() {
+			resp.Diagnostics.AddError(
+				"Error deleting Internal Network",
+				fmt.Sprintf("Could not delete internal network ID %d: %s", networkId, err),
+			)
 		}
-		resp.Diagnostics.AddError(
-			"Error deleting Internal Network",
-			fmt.Sprintf("Could not delete internal network ID %d: %s", networkId, err),
-		)
 		return
 	}
 

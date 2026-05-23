@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -186,7 +185,7 @@ func (r *networkTunnelGroupResource) Create(ctx context.Context, req resource.Cr
 	}
 
 	planRep, _ := json.Marshal(plan)
-	log.Printf("[DEBUG] Local tunnel definition: %s", planRep)
+	tflog.Debug(ctx, "Local tunnel definition", map[string]interface{}{"definition": string(planRep)})
 
 	var err error
 
@@ -434,7 +433,7 @@ func (r *networkTunnelGroupResource) Update(ctx context.Context, req resource.Up
 		// Log the response for debugging
 		if updateResp != nil {
 			updateString, _ := json.Marshal(updateResp)
-			log.Printf("[DEBUG] Update response for tunnel ID %d: %s", tunnelId, updateString)
+			tflog.Debug(ctx, "Update response for tunnel", map[string]interface{}{"tunnel_id": tunnelId, "response": string(updateString)})
 		}
 	}
 

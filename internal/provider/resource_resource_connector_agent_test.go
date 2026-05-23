@@ -5,15 +5,18 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 // Test constants for resource connector agent tests
@@ -36,7 +39,7 @@ func TestResourceConnectorAgentResource_instanceID(t *testing.T) {
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
-			//CheckDestroy:             testAccCheckResourceConnectorAgentDestroy,
+			CheckDestroy: testAccCheckResourceConnectorAgentDestroy,
 			Steps: []resource.TestStep{
 				{
 					Config: testAccResourceConnectorAgentConfigInstanceID(rName, rName),
@@ -62,7 +65,7 @@ func TestResourceConnectorAgentResource_hostname(t *testing.T) {
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
-			//CheckDestroy:             testAccCheckResourceConnectorAgentDestroy,
+			CheckDestroy: testAccCheckResourceConnectorAgentDestroy,
 			Steps: []resource.TestStep{
 				{
 					Config: testAccResourceConnectorAgentConfigHostname(rName, rName),
@@ -88,7 +91,7 @@ func TestResourceConnectorAgentResource_enabled(t *testing.T) {
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
-			//CheckDestroy:             testAccCheckResourceConnectorAgentDestroy,
+			CheckDestroy: testAccCheckResourceConnectorAgentDestroy,
 			Steps: []resource.TestStep{
 				{
 					Config: testAccResourceConnectorAgentConfigEnabled(rName, rName, true),
@@ -167,4 +170,24 @@ resource "ciscosecureaccess_resource_connector_agent" "test_agent" {
   instance_id = "%s"
   confirmed   = %t
 }`, instanceID, confirmed)
+}
+
+func testAccCheckResourceConnectorAgentDestroy(s *terraform.State) error {
+	ctx := context.Background()
+	factory := &client.SSEClientFactory{
+		KeyId:     os.Getenv("CISCOSECUREACCESS_KEY_ID"),
+		KeySecret: os.Getenv("CISCOSECUREACCESS_KEY_SECRET"),
+	}
+	c := factory.GetResConnClient(ctx)
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "ciscosecureaccess_resource_connector_agent" {
+			continue
+		}
+		id := atoi64(rs.Primary.ID)
+		_, httpRes, _ := c.ConnectorsAPI.GetConnector(ctx, id).Execute()
+		if httpRes == nil || httpRes.StatusCode != 404 {
+			return fmt.Errorf("resource connector agent %d still exists after destroy", id)
+		}
+	}
+	return nil
 }

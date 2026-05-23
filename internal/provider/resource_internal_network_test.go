@@ -5,14 +5,18 @@
 package provider
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"testing"
 
+	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 // Test constants for internal network resource tests
@@ -36,6 +40,7 @@ func TestInternalNetworkResource_basic(t *testing.T) {
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
+			CheckDestroy:             testAccCheckInternalNetworkDestroy,
 			Steps: []resource.TestStep{
 				{
 					Config: testAccInternalNetworkBasicConfig(testName),
@@ -64,6 +69,7 @@ func TestInternalNetworkResource_update(t *testing.T) {
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
+			CheckDestroy:             testAccCheckInternalNetworkDestroy,
 			Steps: []resource.TestStep{
 				{
 					Config: testAccInternalNetworkBasicConfig(testName),
@@ -100,4 +106,24 @@ resource "ciscosecureaccess_internal_network" "test_resource" {
   site_id       = ciscosecureaccess_site.test_site.id
 }
 `, name+"-site", name, testInternalNetworkIPAddress, testInternalNetworkPrefixLength)
+}
+
+func testAccCheckInternalNetworkDestroy(s *terraform.State) error {
+	ctx := context.Background()
+	factory := &client.SSEClientFactory{
+		KeyId:     os.Getenv("CISCOSECUREACCESS_KEY_ID"),
+		KeySecret: os.Getenv("CISCOSECUREACCESS_KEY_SECRET"),
+	}
+	c := factory.GetInternalNetworksClient(ctx)
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "ciscosecureaccess_internal_network" {
+			continue
+		}
+		id := atoi64(rs.Primary.ID)
+		_, httpRes, _ := c.InternalNetworksAPI.GetInternalNetwork(ctx, id).Execute()
+		if httpRes == nil || httpRes.StatusCode != 404 {
+			return fmt.Errorf("internal network %d still exists after destroy", id)
+		}
+	}
+	return nil
 }

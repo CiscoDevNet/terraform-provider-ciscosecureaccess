@@ -8,9 +8,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"io"
+	"net/http"
 	"time"
 
+	"github.com/avast/retry-go/v4"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
@@ -125,7 +127,7 @@ func (r *internalDomainResource) Create(ctx context.Context, req resource.Create
 	}
 
 	planRep, _ := json.Marshal(plan)
-	log.Printf("[DEBUG] Local internal domain definition: %s", planRep)
+	tflog.Debug(ctx, "Local internal domain definition", map[string]interface{}{"definition": string(planRep)})
 
 	domain := plan.Domain.ValueString()
 	createInternalDomainRequest := buildInternalDomainRequest(ctx, plan, resp.Diagnostics.AddError)
@@ -133,12 +135,43 @@ func (r *internalDomainResource) Create(ctx context.Context, req resource.Create
 		return
 	}
 
-	createResp, _, err := r.client.InternalDomainsAPI.CreateInternalDomain(ctx).CreateInternalDomainRequest(createInternalDomainRequest).Execute()
+	var createResp *internaldomains.InternalDomainObject
+	err := retry.Do(
+		func() error {
+			var httpRes *http.Response
+			var err error
+			createResp, httpRes, err = r.client.InternalDomainsAPI.CreateInternalDomain(ctx).CreateInternalDomainRequest(createInternalDomainRequest).Execute()
+			if err != nil {
+				if httpRes != nil {
+					bodyBytes, _ := io.ReadAll(httpRes.Body)
+					if httpRes.StatusCode == 409 || httpRes.StatusCode == 429 {
+						return fmt.Errorf("retryable error (status %d): %v - %s", httpRes.StatusCode, err, string(bodyBytes))
+					}
+					resp.Diagnostics.AddError(
+						"Error creating internal domain",
+						fmt.Sprintf("Failed to create internal domain '%s': %v", domain, err),
+					)
+					return retry.Unrecoverable(err)
+				}
+				resp.Diagnostics.AddError(
+					"Error creating internal domain",
+					fmt.Sprintf("Failed to create internal domain '%s': %v", domain, err),
+				)
+				return retry.Unrecoverable(err)
+			}
+			return nil
+		},
+		retry.Attempts(retryMaxAttempts),
+		retry.Delay(retryBaseDelay),
+		retry.Context(ctx),
+	)
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Error creating internal domain",
-			fmt.Sprintf("Failed to create internal domain '%s': %v", domain, err),
-		)
+		if !resp.Diagnostics.HasError() {
+			resp.Diagnostics.AddError(
+				"Error creating internal domain",
+				fmt.Sprintf("Failed to create internal domain '%s': %v", domain, err),
+			)
+		}
 		return
 	}
 
@@ -228,12 +261,43 @@ func (r *internalDomainResource) Update(ctx context.Context, req resource.Update
 		return
 	}
 
-	updateResp, _, err := r.client.InternalDomainsAPI.UpdateInternalDomain(ctx, internalDomainId).CreateInternalDomainRequest(updateInternalDomainRequest).Execute()
+	var updateResp *internaldomains.InternalDomainObject
+	err := retry.Do(
+		func() error {
+			var httpRes *http.Response
+			var err error
+			updateResp, httpRes, err = r.client.InternalDomainsAPI.UpdateInternalDomain(ctx, internalDomainId).CreateInternalDomainRequest(updateInternalDomainRequest).Execute()
+			if err != nil {
+				if httpRes != nil {
+					bodyBytes, _ := io.ReadAll(httpRes.Body)
+					if httpRes.StatusCode == 409 || httpRes.StatusCode == 429 {
+						return fmt.Errorf("retryable error (status %d): %v - %s", httpRes.StatusCode, err, string(bodyBytes))
+					}
+					resp.Diagnostics.AddError(
+						"Error updating internal domain",
+						fmt.Sprintf("Could not update internal domain ID %d: %s", internalDomainId, err.Error()),
+					)
+					return retry.Unrecoverable(err)
+				}
+				resp.Diagnostics.AddError(
+					"Error updating internal domain",
+					fmt.Sprintf("Could not update internal domain ID %d: %s", internalDomainId, err.Error()),
+				)
+				return retry.Unrecoverable(err)
+			}
+			return nil
+		},
+		retry.Attempts(retryMaxAttempts),
+		retry.Delay(retryBaseDelay),
+		retry.Context(ctx),
+	)
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Error updating internal domain",
-			fmt.Sprintf("Could not update internal domain ID %d: %s", internalDomainId, err.Error()),
-		)
+		if !resp.Diagnostics.HasError() {
+			resp.Diagnostics.AddError(
+				"Error updating internal domain",
+				fmt.Sprintf("Could not update internal domain ID %d: %s", internalDomainId, err.Error()),
+			)
+		}
 		return
 	}
 
@@ -264,17 +328,51 @@ func (r *internalDomainResource) Delete(ctx context.Context, req resource.Delete
 	tflog.Info(ctx, "Deleting internal domain", map[string]interface{}{"id": internalDomainId})
 
 	// Delete existing internal domain
-	deleteResp, httpRes, err := r.client.InternalDomainsAPI.DeleteInternalDomain(ctx, internalDomainId).Execute()
+	var deleteResp interface{}
+	var httpRes *http.Response
+	err := retry.Do(
+		func() error {
+			var err error
+			deleteResp, httpRes, err = r.client.InternalDomainsAPI.DeleteInternalDomain(ctx, internalDomainId).Execute()
+			if httpRes != nil && httpRes.StatusCode == 404 {
+				return nil
+			}
+			if err != nil {
+				if httpRes != nil {
+					bodyBytes, _ := io.ReadAll(httpRes.Body)
+					if httpRes.StatusCode == 409 || httpRes.StatusCode == 429 {
+						return fmt.Errorf("retryable error (status %d): %v - %s", httpRes.StatusCode, err, string(bodyBytes))
+					}
+					resp.Diagnostics.AddError(
+						"Error deleting internal domain",
+						fmt.Sprintf("Could not delete internal domain ID %d: %s", internalDomainId, err.Error()),
+					)
+					return retry.Unrecoverable(err)
+				}
+				resp.Diagnostics.AddError(
+					"Error deleting internal domain",
+					fmt.Sprintf("Could not delete internal domain ID %d: %s", internalDomainId, err.Error()),
+				)
+				return retry.Unrecoverable(err)
+			}
+			return nil
+		},
+		retry.Attempts(retryMaxAttempts),
+		retry.Delay(retryBaseDelay),
+		retry.Context(ctx),
+	)
 	if httpRes != nil && httpRes.StatusCode == 404 {
 		// Resource already deleted
 		tflog.Info(ctx, "Internal domain already deleted", map[string]interface{}{"id": internalDomainId})
 		return
 	}
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Error deleting internal domain",
-			fmt.Sprintf("Could not delete internal domain ID %d: %s", internalDomainId, err.Error()),
-		)
+		if !resp.Diagnostics.HasError() {
+			resp.Diagnostics.AddError(
+				"Error deleting internal domain",
+				fmt.Sprintf("Could not delete internal domain ID %d: %s", internalDomainId, err.Error()),
+			)
+		}
 		return
 	}
 
