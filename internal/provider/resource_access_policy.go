@@ -404,6 +404,7 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 		)
 		return
 	}
+	defer httpRes.Body.Close()
 
 	// Parse rule conditions from API response
 	for _, condition := range readResp.RuleConditions {
@@ -555,6 +556,9 @@ func (r *accessPolicyResource) Delete(ctx context.Context, req resource.DeleteRe
 	err := retry.Do(
 		func() error {
 			httpRes, err := r.client.AccessRulesAPI.DeleteRule(ctx, state.ID.ValueInt64()).Execute()
+			if httpRes != nil {
+				defer httpRes.Body.Close()
+			}
 			if err != nil {
 				if httpRes != nil && httpRes.StatusCode == 404 {
 					// Resource already deleted
