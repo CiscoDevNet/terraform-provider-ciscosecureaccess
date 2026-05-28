@@ -57,12 +57,18 @@ func (d *groupDataSource) Metadata(ctx context.Context, req datasource.MetadataR
 }
 
 // Configure adds the provider configured client to the data source.
-func (d *groupDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, _ *datasource.ConfigureResponse) {
+func (d *groupDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
 
-	d.client = *req.ProviderData.(*client.SSEClientFactory).GetReportsClient(ctx)
+	factory, ok := req.ProviderData.(*client.SSEClientFactory)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected Provider Data Type",
+			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
+		return
+	}
+	d.client = *factory.GetReportsClient(ctx)
 }
 
 // Schema defines the schema for the data source.

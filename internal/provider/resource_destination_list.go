@@ -225,12 +225,18 @@ func (r *destinationListResource) Schema(ctx context.Context, req resource.Schem
 }
 
 // Configure adds the provider configured client to the resource.
-func (r *destinationListResource) Configure(ctx context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
+func (r *destinationListResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
 
-	r.client = *req.ProviderData.(*client.SSEClientFactory).GetDestinationListsClient(ctx)
+	factory, ok := req.ProviderData.(*client.SSEClientFactory)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected Provider Data Type",
+			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
+		return
+	}
+	r.client = *factory.GetDestinationListsClient(ctx)
 }
 
 func (r *destinationListResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {

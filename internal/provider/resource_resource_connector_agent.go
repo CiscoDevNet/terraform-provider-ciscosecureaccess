@@ -79,7 +79,13 @@ func (r *resourceConnectorAgentResource) Configure(ctx context.Context, req reso
 		return
 	}
 
-	r.client = *req.ProviderData.(*client.SSEClientFactory).GetResConnClient(ctx)
+	factory, ok := req.ProviderData.(*client.SSEClientFactory)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected Provider Data Type",
+			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
+		return
+	}
+	r.client = *factory.GetResConnClient(ctx)
 	tflog.Debug(ctx, "Configured resource connector agent client")
 }
 

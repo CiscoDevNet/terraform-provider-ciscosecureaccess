@@ -122,12 +122,18 @@ func (d *resourceConnectorGroupsDataSource) Metadata(ctx context.Context, req da
 	resp.TypeName = req.ProviderTypeName + "_resource_connector"
 }
 
-func (d *resourceConnectorGroupsDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, _ *datasource.ConfigureResponse) {
+func (d *resourceConnectorGroupsDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
 
-	d.client = *req.ProviderData.(*client.SSEClientFactory).GetResConnClient(ctx)
+	factory, ok := req.ProviderData.(*client.SSEClientFactory)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected Provider Data Type",
+			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
+		return
+	}
+	d.client = *factory.GetResConnClient(ctx)
 }
 
 // Read retrieves the resource connector groups from the API and sets the state.
