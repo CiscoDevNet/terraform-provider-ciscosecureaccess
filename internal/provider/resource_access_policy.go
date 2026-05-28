@@ -301,8 +301,9 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 				httpRes.Body.Close()
 			}
 
-			respString, _ := json.Marshal(createResp)
-			log.Printf("[DEBUG] Created access policy: %s", respString)
+			if respBytes, err := json.Marshal(createResp); err == nil {
+				log.Printf("[DEBUG] Created access policy: %s", respBytes)
+			}
 
 			plan.Priority = types.Int64Value(createResp.GetRulePriority())
 			plan.ID = types.Int64Value(createResp.GetRuleId())
@@ -342,8 +343,9 @@ func formatCreateAccessPolicyRequest(ctx context.Context, plan *accessPolicyReso
 
 	// Log the conditions for debugging
 	if len(ruleConditionsList) > 0 {
-		conditionString, _ := json.Marshal(ruleConditionsList)
-		log.Printf("[DEBUG] Rule conditions: %s", conditionString)
+		if conditionBytes, err := json.Marshal(ruleConditionsList); err == nil {
+			log.Printf("[DEBUG] Rule conditions: %s", conditionBytes)
+		}
 	}
 
 	// Create rule definition
@@ -534,8 +536,9 @@ func (r *accessPolicyResource) Update(ctx context.Context, req resource.UpdateRe
 			return
 		}
 
-		updateString, _ := json.Marshal(updateRule)
-		log.Printf("[DEBUG] Update response for access policy ID %s: %s", plan.ID.String(), updateString)
+		if updateBytes, err := json.Marshal(updateRule); err == nil {
+			log.Printf("[DEBUG] Update response for access policy ID %s: %s", plan.ID.String(), updateBytes)
+		}
 	}
 
 	// Set the updated state

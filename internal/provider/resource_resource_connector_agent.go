@@ -265,10 +265,11 @@ func (r *resourceConnectorAgentResource) processConnectorResponse(ctx context.Co
 
 	// Try to use reflection to understand the structure
 	if agents != nil {
-		respBytes, _ := json.Marshal(agents)
-		tflog.Debug(ctx, "ListConnectors response data", map[string]interface{}{
-			"data": string(respBytes),
-		})
+		if respBytes, err := json.Marshal(agents); err == nil {
+			tflog.Debug(ctx, "ListConnectors response data", map[string]interface{}{
+				"data": string(respBytes),
+			})
+		}
 	}
 
 	// Try direct type assertion for the specific ConnectorListRes type
@@ -294,10 +295,11 @@ func (r *resourceConnectorAgentResource) processConnectorResponse(ctx context.Co
 		}
 
 		for _, agent := range connectorListRes.GetData() {
-			respString, _ := json.Marshal(agent)
-			tflog.Debug(ctx, "Found resource connector agent", map[string]interface{}{
-				"agent_data": string(respString),
-			})
+			if respBytes, err := json.Marshal(agent); err == nil {
+				tflog.Debug(ctx, "Found resource connector agent", map[string]interface{}{
+					"agent_data": string(respBytes),
+				})
+			}
 
 			state := *data
 			state.LoadFromAPI(ctx, agent)
@@ -440,7 +442,7 @@ func (r *resourceConnectorAgentResource) Synchronize(ctx context.Context, state 
 	agentID := state.ID.ValueInt64()
 
 	// Update confirmed status if changed
-	if plan.Confirmed.ValueBool() && plan.Confirmed.ValueBool() != state.Confirmed.ValueBool() {
+	if plan.Confirmed.ValueBool() != state.Confirmed.ValueBool() {
 		tflog.Debug(ctx, "Updating resource connector agent confirmed status", map[string]interface{}{
 			"agent_id":  agentID,
 			"confirmed": plan.Confirmed.ValueBool(),
@@ -458,7 +460,7 @@ func (r *resourceConnectorAgentResource) Synchronize(ctx context.Context, state 
 	}
 
 	// Update enabled status if changed
-	if plan.Enabled.ValueBool() && plan.Enabled.ValueBool() != state.Enabled.ValueBool() {
+	if plan.Enabled.ValueBool() != state.Enabled.ValueBool() {
 		tflog.Debug(ctx, "Updating resource connector agent enabled status", map[string]interface{}{
 			"agent_id": agentID,
 			"enabled":  plan.Enabled.ValueBool(),
