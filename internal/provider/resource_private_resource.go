@@ -719,11 +719,11 @@ func (r *privateResourceResource) Delete(ctx context.Context, req resource.Delet
 
 	// Delete existing private resource
 	delResp, httpRes, err := r.client.PrivateResourcesAPI.DeletePrivateResource(ctx, int64(id)).Execute()
-	if httpRes != nil && httpRes.StatusCode == privateResourceHTTPNotFound {
-		tflog.Debug(ctx, "Private resource not found, already deleted")
-		return
-	}
 	if err != nil {
+		if httpRes != nil && httpRes.StatusCode == privateResourceHTTPNotFound {
+			tflog.Debug(ctx, "Private resource not found, already deleted")
+			return
+		}
 		var httpRespDetails string
 		if httpRes != nil {
 			httpRespDetails = fmt.Sprintf("HTTP response status: %d", httpRes.StatusCode)

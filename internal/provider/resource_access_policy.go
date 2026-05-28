@@ -383,12 +383,12 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 	tflog.Debug(ctx, "Retrieving access policy", map[string]interface{}{"id": resourceId})
 
 	readResp, httpRes, err := r.client.AccessRulesAPI.GetRule(ctx, resourceId).Execute()
-	if httpRes != nil && httpRes.StatusCode == 404 {
-		tflog.Info(ctx, "Access policy not found, removing from state", map[string]interface{}{"id": resourceId})
-		resp.State.RemoveResource(ctx)
-		return
-	}
 	if err != nil {
+		if httpRes != nil && httpRes.StatusCode == 404 {
+			tflog.Info(ctx, "Access policy not found, removing from state", map[string]interface{}{"id": resourceId})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError(
 			"Error reading access policy",
 			fmt.Sprintf("Cannot read access policy ID %d: %s", resourceId, err.Error()),
@@ -555,15 +555,15 @@ func (r *accessPolicyResource) Delete(ctx context.Context, req resource.DeleteRe
 	err := retry.Do(
 		func() error {
 			httpRes, err := r.client.AccessRulesAPI.DeleteRule(ctx, state.ID.ValueInt64()).Execute()
-			if httpRes != nil && httpRes.StatusCode == 404 {
-				// Resource already deleted
-				return nil
-			}
-			if err != nil && httpRes != nil && httpRes.StatusCode == 409 {
-				// Conflict - retry
-				return fmt.Errorf("conflict deleting access policy: %v", httpRes.StatusCode)
-			}
 			if err != nil {
+				if httpRes != nil && httpRes.StatusCode == 404 {
+					// Resource already deleted
+					return nil
+				}
+				if httpRes != nil && httpRes.StatusCode == 409 {
+					// Conflict - retry
+					return fmt.Errorf("conflict deleting access policy: %v", httpRes.StatusCode)
+				}
 				return retry.Unrecoverable(fmt.Errorf("failed to delete access policy: %w", err))
 			}
 			return nil

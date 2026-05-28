@@ -275,12 +275,12 @@ func (r *networkTunnelGroupResource) Read(ctx context.Context, req resource.Read
 	tflog.Debug(ctx, "Reading network tunnel group", map[string]interface{}{"id": tunnelId})
 
 	readResp, httpRes, err := r.client.NetworkTunnelGroupsAPI.GetNetworkTunnelGroup(ctx, tunnelId).Execute()
-	if httpRes != nil && httpRes.StatusCode == 404 {
-		tflog.Info(ctx, "Network tunnel group not found, removing from state", map[string]interface{}{"id": tunnelId})
-		resp.State.RemoveResource(ctx)
-		return
-	}
 	if err != nil {
+		if httpRes != nil && httpRes.StatusCode == 404 {
+			tflog.Info(ctx, "Network tunnel group not found, removing from state", map[string]interface{}{"id": tunnelId})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError(
 			"Error reading network tunnel group",
 			fmt.Sprintf("Could not read network tunnel group ID %d: %s", tunnelId, err.Error()),
@@ -467,12 +467,12 @@ func (r *networkTunnelGroupResource) Delete(ctx context.Context, req resource.De
 
 	// Delete existing tunnel
 	httpRes, err := r.client.NetworkTunnelGroupsAPI.DeleteNetworkTunnelGroup(ctx, tunnelId).Execute()
-	if httpRes != nil && httpRes.StatusCode == 404 {
-		// Resource already deleted
-		tflog.Info(ctx, "Network tunnel group already deleted", map[string]interface{}{"id": tunnelId})
-		return
-	}
 	if err != nil {
+		if httpRes != nil && httpRes.StatusCode == 404 {
+			// Resource already deleted
+			tflog.Info(ctx, "Network tunnel group already deleted", map[string]interface{}{"id": tunnelId})
+			return
+		}
 		resp.Diagnostics.AddError(
 			"Error deleting network tunnel group",
 			fmt.Sprintf("Could not delete tunnel group ID %d: %s", tunnelId, err.Error()),
