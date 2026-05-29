@@ -110,12 +110,18 @@ func (r *accessPolicyResource) Metadata(_ context.Context, req resource.Metadata
 }
 
 // Configure adds the provider configured client to the resource.
-func (r *accessPolicyResource) Configure(ctx context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
+func (r *accessPolicyResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
 
-	r.client = *req.ProviderData.(*client.SSEClientFactory).GetRulesClient(ctx)
+	factory, ok := req.ProviderData.(*client.SSEClientFactory)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected Provider Data Type",
+			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
+		return
+	}
+	r.client = *factory.GetRulesClient(ctx)
 }
 
 // Schema defines the schema for the resource.
@@ -270,13 +276,11 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 
 	err := retry.Do(
 		func() error {
-			createResp, httpRes, err := r.client.AccessRulesAPI.AddRule(context.Background()).AddRuleRequest(*ruleDefinition).Execute()
-			if httpRes != nil {
-				defer httpRes.Body.Close()
-			}
+			createResp, httpRes, err := r.client.AccessRulesAPI.AddRule(ctx).AddRuleRequest(*ruleDefinition).Execute()
 			if err != nil {
 				if httpRes != nil {
 					bodyBytes, _ := io.ReadAll(httpRes.Body)
+					httpRes.Body.Close()
 					bodyStr := string(bodyBytes)
 
 					// Retryable errors
@@ -293,9 +297,13 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 				resp.Diagnostics.AddError("Error creating access policy", err.Error())
 				return retry.Unrecoverable(err)
 			}
+			if httpRes != nil {
+				httpRes.Body.Close()
+			}
 
-			respString, _ := json.Marshal(createResp)
-			log.Printf("[DEBUG] Created access policy: %s", respString)
+			if respBytes, err := json.Marshal(createResp); err == nil {
+				log.Printf("[DEBUG] Created access policy: %s", respBytes)
+			}
 
 			plan.Priority = types.Int64Value(createResp.GetRulePriority())
 			plan.ID = types.Int64Value(createResp.GetRuleId())
@@ -310,6 +318,7 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 		},
 		retry.Delay(time.Second*10), // More reasonable delay
 		retry.Attempts(6),
+		retry.Context(ctx),
 	)
 
 	if err != nil {
@@ -334,8 +343,9 @@ func formatCreateAccessPolicyRequest(ctx context.Context, plan *accessPolicyReso
 
 	// Log the conditions for debugging
 	if len(ruleConditionsList) > 0 {
-		conditionString, _ := json.Marshal(ruleConditionsList)
-		log.Printf("[DEBUG] Rule conditions: %s", conditionString)
+		if conditionBytes, err := json.Marshal(ruleConditionsList); err == nil {
+			log.Printf("[DEBUG] Rule conditions: %s", conditionBytes)
+		}
 	}
 
 	// Create rule definition
@@ -366,9 +376,8 @@ func formatCreateAccessPolicyRequest(ctx context.Context, plan *accessPolicyReso
 func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	// Get current state
 	var state accessPolicyResourceModel
-	diags := req.State.Get(ctx, &state)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
-		resp.Diagnostics.Append(diags...)
 		return
 	}
 
@@ -376,12 +385,12 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 	tflog.Debug(ctx, "Retrieving access policy", map[string]interface{}{"id": resourceId})
 
 	readResp, httpRes, err := r.client.AccessRulesAPI.GetRule(ctx, resourceId).Execute()
-	if httpRes != nil && httpRes.StatusCode == 404 {
-		tflog.Info(ctx, "Access policy not found, removing from state", map[string]interface{}{"id": resourceId})
-		resp.State.RemoveResource(ctx)
-		return
-	}
 	if err != nil {
+		if httpRes != nil && httpRes.StatusCode == 404 {
+			tflog.Info(ctx, "Access policy not found, removing from state", map[string]interface{}{"id": resourceId})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError(
 			"Error reading access policy",
 			fmt.Sprintf("Cannot read access policy ID %d: %s", resourceId, err.Error()),
@@ -397,6 +406,7 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 		)
 		return
 	}
+	defer httpRes.Body.Close()
 
 	// Parse rule conditions from API response
 	for _, condition := range readResp.RuleConditions {
@@ -404,9 +414,13 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 		case condition.AttributeName.AttributeNameDestination != nil:
 			switch string(*condition.AttributeName.AttributeNameDestination) {
 			case "umbrella.destination.private_resource_ids":
-				state.PrivateResourceIds, _ = types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				v, d := types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				resp.Diagnostics.Append(d...)
+				state.PrivateResourceIds = v
 			case "umbrella.destination.destination_list_ids":
-				state.DestinationListIds, _ = types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				v, d := types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				resp.Diagnostics.Append(d...)
+				state.DestinationListIds = v
 			case "umbrella.destination.private_resource_types":
 				var typeNames []string
 				for _, typeId := range *condition.AttributeValue.ArrayOfString {
@@ -414,11 +428,15 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 						typeNames = append(typeNames, PRIVATE_APPS_SCHEMA)
 					}
 				}
-				state.PrivateDestinationTypes, _ = types.SetValueFrom(ctx, types.StringType, typeNames)
+				v, d := types.SetValueFrom(ctx, types.StringType, typeNames)
+				resp.Diagnostics.Append(d...)
+				state.PrivateDestinationTypes = v
 			case "umbrella.destination.all":
 				if condition.AttributeValue.Bool != nil && *condition.AttributeValue.Bool {
 					publicTypes := []string{PUBLIC_INTERNET_SCHEMA}
-					state.PublicDestinationTypes, _ = types.SetValueFrom(ctx, types.StringType, publicTypes)
+					v, d := types.SetValueFrom(ctx, types.StringType, publicTypes)
+					resp.Diagnostics.Append(d...)
+					state.PublicDestinationTypes = v
 				}
 			}
 		case condition.AttributeName.AttributeNameSource != nil:
@@ -432,9 +450,13 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 						typeNames = append(typeNames, NETWORKS)
 					}
 				}
-				state.SourceTypes, _ = types.SetValueFrom(ctx, types.StringType, typeNames)
+				v, d := types.SetValueFrom(ctx, types.StringType, typeNames)
+				resp.Diagnostics.Append(d...)
+				state.SourceTypes = v
 			case "umbrella.source.identity_ids":
-				state.SourceIds, _ = types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				v, d := types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				resp.Diagnostics.Append(d...)
+				state.SourceIds = v
 			}
 		}
 	}
@@ -502,7 +524,10 @@ func (r *accessPolicyResource) Update(ctx context.Context, req resource.UpdateRe
 			baseline.RuleSettings,
 		)
 
-		updateRule, _, err := r.client.AccessRulesAPI.PutRule(ctx, plan.ID.ValueInt64()).PutRuleRequest(*payload).Execute()
+		updateRule, httpRes, err := r.client.AccessRulesAPI.PutRule(ctx, plan.ID.ValueInt64()).PutRuleRequest(*payload).Execute()
+		if httpRes != nil {
+			defer httpRes.Body.Close()
+		}
 		if err != nil {
 			resp.Diagnostics.AddError(
 				"Error updating access policy",
@@ -511,8 +536,9 @@ func (r *accessPolicyResource) Update(ctx context.Context, req resource.UpdateRe
 			return
 		}
 
-		updateString, _ := json.Marshal(updateRule)
-		log.Printf("[DEBUG] Update response for access policy ID %s: %s", plan.ID.String(), updateString)
+		if updateBytes, err := json.Marshal(updateRule); err == nil {
+			log.Printf("[DEBUG] Update response for access policy ID %s: %s", plan.ID.String(), updateBytes)
+		}
 	}
 
 	// Set the updated state
@@ -533,15 +559,18 @@ func (r *accessPolicyResource) Delete(ctx context.Context, req resource.DeleteRe
 	err := retry.Do(
 		func() error {
 			httpRes, err := r.client.AccessRulesAPI.DeleteRule(ctx, state.ID.ValueInt64()).Execute()
-			if httpRes != nil && httpRes.StatusCode == 404 {
-				// Resource already deleted
-				return nil
-			}
-			if err != nil && httpRes != nil && httpRes.StatusCode == 409 {
-				// Conflict - retry
-				return fmt.Errorf("conflict deleting access policy: %v", httpRes.StatusCode)
+			if httpRes != nil {
+				defer httpRes.Body.Close()
 			}
 			if err != nil {
+				if httpRes != nil && httpRes.StatusCode == 404 {
+					// Resource already deleted
+					return nil
+				}
+				if httpRes != nil && httpRes.StatusCode == 409 {
+					// Conflict - retry
+					return fmt.Errorf("conflict deleting access policy: %v", httpRes.StatusCode)
+				}
 				return retry.Unrecoverable(fmt.Errorf("failed to delete access policy: %w", err))
 			}
 			return nil

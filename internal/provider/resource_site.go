@@ -53,12 +53,18 @@ func (r *siteResource) Metadata(_ context.Context, req resource.MetadataRequest,
 }
 
 // Configure adds the provider configured client to the resource.
-func (r *siteResource) Configure(ctx context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
+func (r *siteResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
 
-	r.client = *req.ProviderData.(*client.SSEClientFactory).GetSitesClient(ctx)
+	factory, ok := req.ProviderData.(*client.SSEClientFactory)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected Provider Data Type",
+			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
+		return
+	}
+	r.client = *factory.GetSitesClient(ctx)
 }
 
 // Schema defines the schema for the resource.

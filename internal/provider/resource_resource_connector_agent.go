@@ -79,7 +79,13 @@ func (r *resourceConnectorAgentResource) Configure(ctx context.Context, req reso
 		return
 	}
 
-	r.client = *req.ProviderData.(*client.SSEClientFactory).GetResConnClient(ctx)
+	factory, ok := req.ProviderData.(*client.SSEClientFactory)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected Provider Data Type",
+			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
+		return
+	}
+	r.client = *factory.GetResConnClient(ctx)
 	tflog.Debug(ctx, "Configured resource connector agent client")
 }
 
@@ -204,12 +210,11 @@ func (r *resourceConnectorAgentResource) findAndConfigureAgent(ctx context.Conte
 	return retry.Do(
 		func() error {
 			agents, httpRes, err := r.client.ConnectorsAPI.ListConnectors(ctx).Filters(filters).Execute()
-			if httpRes != nil && httpRes.Body != nil {
-				httpRes.Body.Close()
-			}
-
 			if err != nil {
 				return r.handleListConnectorsError(ctx, httpRes, err)
+			}
+			if httpRes != nil && httpRes.Body != nil {
+				httpRes.Body.Close()
 			}
 
 			return r.processConnectorResponse(ctx, agents, data, filters)
@@ -225,6 +230,7 @@ func (r *resourceConnectorAgentResource) handleListConnectorsError(ctx context.C
 	var bodyBytes []byte
 	if httpRes != nil && httpRes.Body != nil {
 		bodyBytes, _ = io.ReadAll(httpRes.Body)
+		httpRes.Body.Close()
 	}
 
 	statusCode := 0
@@ -259,10 +265,11 @@ func (r *resourceConnectorAgentResource) processConnectorResponse(ctx context.Co
 
 	// Try to use reflection to understand the structure
 	if agents != nil {
-		respBytes, _ := json.Marshal(agents)
-		tflog.Debug(ctx, "ListConnectors response data", map[string]interface{}{
-			"data": string(respBytes),
-		})
+		if respBytes, err := json.Marshal(agents); err == nil {
+			tflog.Debug(ctx, "ListConnectors response data", map[string]interface{}{
+				"data": string(respBytes),
+			})
+		}
 	}
 
 	// Try direct type assertion for the specific ConnectorListRes type
@@ -288,14 +295,17 @@ func (r *resourceConnectorAgentResource) processConnectorResponse(ctx context.Co
 		}
 
 		for _, agent := range connectorListRes.GetData() {
-			respString, _ := json.Marshal(agent)
-			tflog.Debug(ctx, "Found resource connector agent", map[string]interface{}{
-				"agent_data": string(respString),
-			})
+			if respBytes, err := json.Marshal(agent); err == nil {
+				tflog.Debug(ctx, "Found resource connector agent", map[string]interface{}{
+					"agent_data": string(respBytes),
+				})
+			}
 
 			state := *data
 			state.LoadFromAPI(ctx, agent)
-			r.Synchronize(ctx, &state, data)
+			if err := r.Synchronize(ctx, &state, data); err != nil {
+				return fmt.Errorf("failed to synchronize connector agent: %w", err)
+			}
 			*data = state
 
 			tflog.Info(ctx, "Successfully configured resource connector agent", map[string]interface{}{
@@ -409,7 +419,13 @@ func (r *resourceConnectorAgentResource) Update(ctx context.Context, req resourc
 	})
 
 	// Update API call logic
-	r.Synchronize(ctx, &state, &plan)
+	if err := r.Synchronize(ctx, &state, &plan); err != nil {
+		resp.Diagnostics.AddError(
+			"Error updating resource connector agent",
+			fmt.Sprintf("Failed to synchronize connector agent %d: %v", agentID, err),
+		)
+		return
+	}
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -419,12 +435,14 @@ func (r *resourceConnectorAgentResource) Update(ctx context.Context, req resourc
 	})
 }
 
-// Synchronize updates the resource connector agent based on plan changes
-func (r *resourceConnectorAgentResource) Synchronize(ctx context.Context, state *resourceConnectorAgentResourceModel, plan *resourceConnectorAgentResourceModel) {
+// Synchronize updates the resource connector agent based on plan changes.
+// It returns an error if any patch operation fails so callers can gate
+// state writes on success and avoid silent state drift.
+func (r *resourceConnectorAgentResource) Synchronize(ctx context.Context, state *resourceConnectorAgentResourceModel, plan *resourceConnectorAgentResourceModel) error {
 	agentID := state.ID.ValueInt64()
 
 	// Update confirmed status if changed
-	if plan.Confirmed.ValueBool() && plan.Confirmed.ValueBool() != state.Confirmed.ValueBool() {
+	if plan.Confirmed.ValueBool() != state.Confirmed.ValueBool() {
 		tflog.Debug(ctx, "Updating resource connector agent confirmed status", map[string]interface{}{
 			"agent_id":  agentID,
 			"confirmed": plan.Confirmed.ValueBool(),
@@ -435,14 +453,14 @@ func (r *resourceConnectorAgentResource) Synchronize(ctx context.Context, state 
 				"agent_id": agentID,
 				"error":    err.Error(),
 			})
-		} else {
-			state.Confirmed = plan.Confirmed
-			tflog.Debug(ctx, "Successfully updated confirmed status")
+			return fmt.Errorf("failed to update confirmed status: %w", err)
 		}
+		state.Confirmed = plan.Confirmed
+		tflog.Debug(ctx, "Successfully updated confirmed status")
 	}
 
 	// Update enabled status if changed
-	if plan.Enabled.ValueBool() && plan.Enabled.ValueBool() != state.Enabled.ValueBool() {
+	if plan.Enabled.ValueBool() != state.Enabled.ValueBool() {
 		tflog.Debug(ctx, "Updating resource connector agent enabled status", map[string]interface{}{
 			"agent_id": agentID,
 			"enabled":  plan.Enabled.ValueBool(),
@@ -453,11 +471,13 @@ func (r *resourceConnectorAgentResource) Synchronize(ctx context.Context, state 
 				"agent_id": agentID,
 				"error":    err.Error(),
 			})
-		} else {
-			state.Enabled = plan.Enabled
-			tflog.Debug(ctx, "Successfully updated enabled status")
+			return fmt.Errorf("failed to update enabled status: %w", err)
 		}
+		state.Enabled = plan.Enabled
+		tflog.Debug(ctx, "Successfully updated enabled status")
 	}
+
+	return nil
 }
 
 // patchConnectorField updates a single field on the connector using PATCH operation

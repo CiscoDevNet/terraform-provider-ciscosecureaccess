@@ -47,12 +47,18 @@ type globalSettingsResourceModel struct {
 }
 
 // Configure adds the provider configured client to the resource
-func (r *globalSettingsResource) Configure(ctx context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
+func (r *globalSettingsResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
 
-	r.client = *req.ProviderData.(*client.SSEClientFactory).GetRulesClient(ctx)
+	factory, ok := req.ProviderData.(*client.SSEClientFactory)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected Provider Data Type",
+			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
+		return
+	}
+	r.client = *factory.GetRulesClient(ctx)
 	tflog.Debug(ctx, "Configured global settings resource client")
 }
 
