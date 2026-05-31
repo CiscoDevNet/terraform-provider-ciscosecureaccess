@@ -7,9 +7,11 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
 	"github.com/CiscoDevNet/go-ciscosecureaccess/sites"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -22,8 +24,9 @@ import (
 
 // Ensure the implementation satisfies the expected interfaces.
 var (
-	_ resource.Resource              = &siteResource{}
-	_ resource.ResourceWithConfigure = &siteResource{}
+	_ resource.Resource                = &siteResource{}
+	_ resource.ResourceWithConfigure   = &siteResource{}
+	_ resource.ResourceWithImportState = &siteResource{}
 )
 
 // NewSiteResource is a helper function to simplify the provider implementation.
@@ -70,47 +73,56 @@ func (r *siteResource) Configure(ctx context.Context, req resource.ConfigureRequ
 // Schema defines the schema for the resource.
 func (r *siteResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages a Site in the Cisco Secure Access organization.",
+		Description:         "Manages a Site in the Cisco Secure Access organization.",
+		MarkdownDescription: "Manages a Site in the Cisco Secure Access organization.",
+		Version:             0,
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
-				Description: "Unique ID of the Site.",
-				Computed:    true,
+				Description:         "Unique ID of the Site.",
+				MarkdownDescription: "Unique ID of the Site.",
+				Computed:            true,
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.UseStateForUnknown(),
 				},
 			},
 			"name": schema.StringAttribute{
-				Description: "Name of the Site. Must be between 1 and 255 characters.",
-				Required:    true,
+				Description:         "Name of the Site. Must be between 1 and 255 characters.",
+				MarkdownDescription: "Name of the Site. Must be between 1 and 255 characters.",
+				Required:            true,
 			},
 			"origin_id": schema.Int64Attribute{
-				Description: "Origin ID of the Site.",
-				Computed:    true,
+				Description:         "Origin ID of the Site.",
+				MarkdownDescription: "Origin ID of the Site.",
+				Computed:            true,
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.UseStateForUnknown(),
 				},
 			},
 			"is_default": schema.BoolAttribute{
-				Description: "Specifies whether the Site is the default Site.",
-				Computed:    true,
+				Description:         "Specifies whether the Site is the default Site.",
+				MarkdownDescription: "Specifies whether the Site is the default Site.",
+				Computed:            true,
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"type": schema.StringAttribute{
-				Description: "Type of the Site.",
-				Computed:    true,
+				Description:         "Type of the Site.",
+				MarkdownDescription: "Type of the Site.",
+				Computed:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"internal_network_count": schema.Int64Attribute{
-				Description: "Number of internal networks associated with the Site.",
-				Computed:    true,
+				Description:         "Number of internal networks associated with the Site.",
+				MarkdownDescription: "Number of internal networks associated with the Site.",
+				Computed:            true,
 			},
 			"va_count": schema.Int64Attribute{
-				Description: "Number of virtual appliances associated with the Site.",
-				Computed:    true,
+				Description:         "Number of virtual appliances associated with the Site.",
+				MarkdownDescription: "Number of virtual appliances associated with the Site.",
+				Computed:            true,
 			},
 		},
 	}
@@ -264,4 +276,14 @@ func flattenSiteObject(site *sites.SiteObject, model *siteResourceModel) {
 	} else {
 		model.VaCount = types.Int64Null()
 	}
+}
+
+// ImportState imports an existing Site resource by its numeric ID.
+func (r *siteResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	id, err := strconv.ParseInt(req.ID, 10, 64)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid import ID", fmt.Sprintf("Expected numeric site ID, got: %s", req.ID))
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
 }
