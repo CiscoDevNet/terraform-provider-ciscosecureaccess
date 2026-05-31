@@ -192,6 +192,7 @@ func validateAndResolveConfig(ctx context.Context, config ciscosecureaccessProvi
 // DataSources defines the data sources implemented in the provider.
 func (p *ciscosecureaccessProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
+		NewActivityReportDataSource,
 		NewResourceConnectorGroupsDataSource,
 		NewIdentityDataSource,
 		NewGroupDataSource,
