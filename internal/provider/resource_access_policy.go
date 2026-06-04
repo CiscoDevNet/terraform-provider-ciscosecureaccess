@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -288,8 +287,8 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 						return fmt.Errorf("retryable error: %v - %s", err, bodyStr)
 					}
 
-					// Non-retryable errors
-					log.Printf("[ERROR] error creating access policy: %v: %s\n", httpRes.Status, bodyStr)
+				// Non-retryable errors
+				tflog.Error(ctx, "Error creating access policy", map[string]interface{}{"http_status": httpRes.Status, "body": bodyStr})
 					resp.Diagnostics.AddError("Error creating access policy", fmt.Sprintf("HTTP %s: %s", httpRes.Status, bodyStr))
 					return retry.Unrecoverable(err)
 				}
@@ -301,9 +300,9 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 				httpRes.Body.Close()
 			}
 
-			if respBytes, err := json.Marshal(createResp); err == nil {
-				log.Printf("[DEBUG] Created access policy: %s", respBytes)
-			}
+		if respBytes, err := json.Marshal(createResp); err == nil {
+			tflog.Debug(ctx, "Created access policy", map[string]interface{}{"response": string(respBytes)})
+		}
 
 			plan.Priority = types.Int64Value(createResp.GetRulePriority())
 			plan.ID = types.Int64Value(createResp.GetRuleId())
@@ -344,7 +343,7 @@ func formatCreateAccessPolicyRequest(ctx context.Context, plan *accessPolicyReso
 	// Log the conditions for debugging
 	if len(ruleConditionsList) > 0 {
 		if conditionBytes, err := json.Marshal(ruleConditionsList); err == nil {
-			log.Printf("[DEBUG] Rule conditions: %s", conditionBytes)
+			tflog.Debug(ctx, "Rule conditions", map[string]interface{}{"conditions": string(conditionBytes)})
 		}
 	}
 
@@ -363,12 +362,12 @@ func formatCreateAccessPolicyRequest(ctx context.Context, plan *accessPolicyReso
 	// Set priority if specified
 	if plan.Priority.ValueInt64() != 0 {
 		ruleDefinition.SetRulePriority(plan.Priority.ValueInt64())
-		log.Printf("[DEBUG] Request set priority: %v", ruleDefinition.GetRulePriority())
+		tflog.Debug(ctx, "Request set priority", map[string]interface{}{"priority": ruleDefinition.GetRulePriority()})
 	}
 
 	// Log the final request for debugging
 	ruleString, _ := ruleDefinition.MarshalJSON()
-	log.Printf("[DEBUG] Request definition: %s", ruleString)
+	tflog.Debug(ctx, "Request definition", map[string]interface{}{"definition": string(ruleString)})
 
 	return ruleDefinition
 }
@@ -537,7 +536,7 @@ func (r *accessPolicyResource) Update(ctx context.Context, req resource.UpdateRe
 		}
 
 		if updateBytes, err := json.Marshal(updateRule); err == nil {
-			log.Printf("[DEBUG] Update response for access policy ID %s: %s", plan.ID.String(), updateBytes)
+			tflog.Debug(ctx, "Update response for access policy", map[string]interface{}{"id": plan.ID.String(), "response": string(updateBytes)})
 		}
 	}
 
@@ -723,7 +722,7 @@ func buildRuleSettings(plan *accessPolicyResourceModel) []rules.RuleSettingsInne
 func atoi64(a string) int64 {
 	i, err := strconv.ParseInt(a, 10, 64)
 	if err != nil {
-		log.Printf("[WARN] Failed to convert string %s to int64: %v", a, err)
+		tflog.Warn(context.Background(), "Failed to convert string to int64", map[string]interface{}{"value": a, "error": err.Error()})
 		return 0
 	}
 	return i
