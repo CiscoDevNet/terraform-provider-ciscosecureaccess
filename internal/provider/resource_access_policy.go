@@ -68,6 +68,7 @@ type accessPolicyResourceModel struct {
 	Action                  types.String `tfsdk:"action"`
 	PrivateResourceIds      types.Set    `tfsdk:"private_resource_ids"`
 	DestinationListIds      types.Set    `tfsdk:"destination_list_ids"`
+	ContentCategoryListIds  types.Set    `tfsdk:"content_category_list_ids"`
 	Description             types.String `tfsdk:"description"`
 	Enabled                 types.Bool   `tfsdk:"enabled"`
 	LogLevel                types.String `tfsdk:"log_level"`
@@ -158,8 +159,8 @@ func (r *accessPolicyResource) Schema(_ context.Context, _ resource.SchemaReques
 				ElementType: types.Int64Type,
 				Optional:    true,
 				Validators: []validator.Set{
-					setvalidator.AtLeastOneOf(path.MatchRoot("private_resource_ids"), path.MatchRoot("destination_list_ids"), path.MatchRoot("private_destination_types"), path.MatchRoot("public_destination_types")),
-					setvalidator.ConflictsWith(path.MatchRoot("destination_list_ids")),
+					setvalidator.AtLeastOneOf(path.MatchRoot("private_resource_ids"), path.MatchRoot("destination_list_ids"), path.MatchRoot("content_category_list_ids"), path.MatchRoot("private_destination_types"), path.MatchRoot("public_destination_types")),
+					setvalidator.ConflictsWith(path.MatchRoot("destination_list_ids"), path.MatchRoot("content_category_list_ids")),
 				},
 			},
 			"destination_list_ids": schema.SetAttribute{
@@ -167,7 +168,16 @@ func (r *accessPolicyResource) Schema(_ context.Context, _ resource.SchemaReques
 				ElementType: types.Int64Type,
 				Optional:    true,
 				Validators: []validator.Set{
-					setvalidator.AtLeastOneOf(path.MatchRoot("private_resource_ids"), path.MatchRoot("destination_list_ids"), path.MatchRoot("private_destination_types"), path.MatchRoot("public_destination_types")),
+					setvalidator.AtLeastOneOf(path.MatchRoot("private_resource_ids"), path.MatchRoot("destination_list_ids"), path.MatchRoot("content_category_list_ids"), path.MatchRoot("private_destination_types"), path.MatchRoot("public_destination_types")),
+					setvalidator.ConflictsWith(path.MatchRoot("private_resource_ids")),
+				},
+			},
+			"content_category_list_ids": schema.SetAttribute{
+				Description: "Secure Access IDs of matching content category lists. Use the ciscosecureaccess_content_category_list data source to look up IDs.",
+				ElementType: types.Int64Type,
+				Optional:    true,
+				Validators: []validator.Set{
+					setvalidator.AtLeastOneOf(path.MatchRoot("private_resource_ids"), path.MatchRoot("destination_list_ids"), path.MatchRoot("content_category_list_ids"), path.MatchRoot("private_destination_types"), path.MatchRoot("public_destination_types")),
 					setvalidator.ConflictsWith(path.MatchRoot("private_resource_ids")),
 				},
 			},
@@ -243,8 +253,8 @@ func (r *accessPolicyResource) Schema(_ context.Context, _ resource.SchemaReques
 				Optional:    true,
 				Validators: []validator.Set{
 					setvalidator.ValueStringsAre(stringvalidator.OneOf(accessPolicyResourceModel{}.ValidPrivateDestinationTypes()...)),
-					setvalidator.AtLeastOneOf(path.MatchRoot("private_destination_types"), path.MatchRoot("destination_list_ids"), path.MatchRoot("private_resource_ids"), path.MatchRoot("public_destination_types")),
-					setvalidator.ConflictsWith(path.MatchRoot("destination_list_ids"), path.MatchRoot("public_destination_types")),
+					setvalidator.AtLeastOneOf(path.MatchRoot("private_destination_types"), path.MatchRoot("destination_list_ids"), path.MatchRoot("content_category_list_ids"), path.MatchRoot("private_resource_ids"), path.MatchRoot("public_destination_types")),
+					setvalidator.ConflictsWith(path.MatchRoot("destination_list_ids"), path.MatchRoot("content_category_list_ids"), path.MatchRoot("public_destination_types")),
 				},
 			},
 			"public_destination_types": schema.SetAttribute{
@@ -253,7 +263,7 @@ func (r *accessPolicyResource) Schema(_ context.Context, _ resource.SchemaReques
 				Optional:    true,
 				Validators: []validator.Set{
 					setvalidator.ValueStringsAre(stringvalidator.OneOf(accessPolicyResourceModel{}.ValidPublicDestinationTypes()...)),
-					setvalidator.AtLeastOneOf(path.MatchRoot("private_destination_types"), path.MatchRoot("destination_list_ids"), path.MatchRoot("private_resource_ids"), path.MatchRoot("public_destination_types")),
+					setvalidator.AtLeastOneOf(path.MatchRoot("private_destination_types"), path.MatchRoot("destination_list_ids"), path.MatchRoot("content_category_list_ids"), path.MatchRoot("private_resource_ids"), path.MatchRoot("public_destination_types")),
 					setvalidator.ConflictsWith(path.MatchRoot("private_resource_ids"), path.MatchRoot("private_destination_types")),
 				},
 			},
@@ -421,6 +431,10 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 				v, d := types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
 				resp.Diagnostics.Append(d...)
 				state.DestinationListIds = v
+			case "umbrella.destination.category_list_ids":
+				v, d := types.SetValueFrom(ctx, types.Int64Type, condition.AttributeValue.ArrayOfInt64)
+				resp.Diagnostics.Append(d...)
+				state.ContentCategoryListIds = v
 			case "umbrella.destination.private_resource_types":
 				var typeNames []string
 				for _, typeId := range *condition.AttributeValue.ArrayOfString {
@@ -655,6 +669,18 @@ func buildDestinationConditions(ctx context.Context, plan *accessPolicyResourceM
 		conditions = append(conditions, *condition)
 	}
 
+	// Content category list IDs condition
+	var contentCategoryListIds []int64
+	plan.ContentCategoryListIds.ElementsAs(ctx, &contentCategoryListIds, true)
+	if len(contentCategoryListIds) > 0 {
+		condition := rules.NewRuleConditionsInner()
+		destinationName := rules.AttributeNameDestination("umbrella.destination.category_list_ids")
+		condition.SetAttributeName(rules.AttributeName{AttributeNameDestination: &destinationName})
+		condition.SetAttributeValue(rules.ArrayOfInt64AsAttributeValue(&contentCategoryListIds))
+		condition.SetAttributeOperator("INTERSECT")
+		conditions = append(conditions, *condition)
+	}
+
 	// Private destination types condition
 	var privateTypeNames []string
 	var privateTypes []string
@@ -741,6 +767,7 @@ func hasChanges(plan, state *accessPolicyResourceModel) bool {
 		!plan.PublicDestinationTypes.Equal(state.PublicDestinationTypes) ||
 		!plan.PrivateResourceIds.Equal(state.PrivateResourceIds) ||
 		!plan.DestinationListIds.Equal(state.DestinationListIds) ||
+		!plan.ContentCategoryListIds.Equal(state.ContentCategoryListIds) ||
 		!plan.LogLevel.Equal(state.LogLevel) ||
 		!plan.ClientPostureProfileId.Equal(state.ClientPostureProfileId) ||
 		!plan.TrafficType.Equal(state.TrafficType)

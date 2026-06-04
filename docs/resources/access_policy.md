@@ -45,6 +45,7 @@ resource "ciscosecureaccess_private_resource" "new_resource" {
 
 - `action` (String) Action taken on matched traffic ('allow' or 'block'). Defaults to 'block'
 - `client_posture_profile_id` (Number) ID of posture profile for client-based access
+- `content_category_list_ids` (Set of Number) Secure Access IDs of matching content category lists. Use the ciscosecureaccess_content_category_list data source to look up IDs.
 - `description` (String) Description for access policy
 - `destination_list_ids` (Set of Number) Secure Access IDs of matching destination list
 - `enabled` (Boolean) Whether or not to enable access policy. Defaults to false

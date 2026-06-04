@@ -195,6 +195,7 @@ func (p *ciscosecureaccessProvider) DataSources(_ context.Context) []func() data
 		NewResourceConnectorGroupsDataSource,
 		NewIdentityDataSource,
 		NewGroupDataSource,
+		NewContentCategoryListDataSource,
 	}
 }
 
