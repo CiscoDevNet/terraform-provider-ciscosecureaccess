@@ -27,16 +27,46 @@ resource "ciscosecureaccess_private_resource" "test_resource" {
 }
 
 resource "ciscosecureaccess_private_resource" "ztna_resource" {
-    name = "TF-Test-ZTNA-Resource"
-    access_types = ["client"]
-    client_reachable_addresses = ["10.10.10.3"]
-    description = "Test ZTNA resource for terraform access policy support"
-    addresses = [{
-      addresses = ["10.10.10.3/32"]
-      traffic_selector = [
-        { ports = "443", protocol = "http/https" },
-      ]
-    }]
+  name                       = "TF-Test-ZTNA-Resource"
+  access_types               = ["client"]
+  client_reachable_addresses = ["10.10.10.3"]
+  description                = "Test ZTNA resource for terraform access policy support"
+  addresses = [{
+    addresses = ["10.10.10.3/32"]
+    traffic_selector = [
+      { ports = "443", protocol = "http/https" },
+    ]
+  }]
+}
+
+resource "ciscosecureaccess_private_resource" "browser_resource" {
+  name                         = "TF-Test-Browser-Resource"
+  access_types                 = ["browser"]
+  description                  = "Test browser-based ZTNA resource"
+  browser_external_fqdn_prefix = "tf-test-browser"
+
+  addresses = [{
+    addresses = ["jira.internal.example.com"]
+    traffic_selector = [
+      { ports = "443", protocol = "tcp" },
+    ]
+  }]
+}
+
+resource "ciscosecureaccess_private_resource" "combined_ztna_resource" {
+  name                         = "TF-Test-Combined-ZTNA-Resource"
+  access_types                 = ["browser", "client", "network"]
+  client_reachable_addresses   = ["10.10.10.3"]
+  description                  = "Test combined browser, client, and network private resource"
+  browser_external_fqdn_prefix = "tf-test-combined"
+  browser_sni                  = "jira.internal.example.com"
+
+  addresses = [{
+    addresses = ["10.10.10.3/32"]
+    traffic_selector = [
+      { ports = "443", protocol = "tcp" },
+    ]
+  }]
 }
 ```
 
@@ -51,10 +81,18 @@ resource "ciscosecureaccess_private_resource" "ztna_resource" {
 ### Optional
 
 - `addresses` (Attributes Set) List of address/protocol pairs for the private resource (see [below for nested schema](#nestedatt--addresses))
+- `browser_external_fqdn_prefix` (String) External FQDN prefix for browser-based access. Required when `access_types` includes `browser`.
+- `browser_protocol` (String) Protocol for browser-based access from the proxy to the private resource. Defaults to `HTTPS` when browser access is enabled.
+- `browser_sni` (String) SNI domain name for HTTPS browser-based access.
+- `browser_ssl_verification_enabled` (Boolean) Whether to enable upstream SSL verification for HTTPS browser-based access. Defaults to `true` when `browser_protocol` is `HTTPS`.
 - `certificate_id` (Number) Object ID of certificate to use for decrypting traffic
 - `client_reachable_addresses` (Set of String) Addresses allowed for client-based access
 - `description` (String) Description of private resource
 - `id` (String) Unique ID of private resource
+
+### Read-Only
+
+- `browser_external_fqdn` (String) External FQDN for browser-based access returned by the API.
 
 <a id="nestedatt--addresses"></a>
 ### Nested Schema for `addresses`
@@ -62,7 +100,7 @@ resource "ciscosecureaccess_private_resource" "ztna_resource" {
 Optional:
 
 - `addresses` (Set of String) One list of addresses for the private resource
-- `traffic_selector` (Attributes Set) Protocol/port pairs for this list of addresses (see [below for nested schema](#nestedatt--addresses--traffic_selector))
+- `traffic_selector` (Attributes Set) Protocol/port pairs for this list of addresses. When `access_types` includes `browser`, selector ports must be `80`, `443`, or both. (see [below for nested schema](#nestedatt--addresses--traffic_selector))
 
 <a id="nestedatt--addresses--traffic_selector"></a>
 ### Nested Schema for `addresses.traffic_selector`

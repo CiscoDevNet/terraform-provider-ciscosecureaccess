@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
@@ -20,6 +21,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -31,8 +33,9 @@ import (
 
 // Ensure the implementation satisfies the expected interfaces.
 var (
-	_ resource.Resource              = &privateResourceResource{}
-	_ resource.ResourceWithConfigure = &privateResourceResource{}
+	_ resource.Resource                   = &privateResourceResource{}
+	_ resource.ResourceWithConfigure      = &privateResourceResource{}
+	_ resource.ResourceWithValidateConfig = &privateResourceResource{}
 )
 
 // Constants for private resource management
@@ -40,6 +43,10 @@ const (
 	// Access types
 	accessTypeClient  = "client"
 	accessTypeNetwork = "network"
+	accessTypeBrowser = "browser"
+
+	// Browser-based access defaults
+	browserProtocolHTTPS = "HTTPS"
 
 	// HTTP status codes
 	privateResourceHTTPNotFound    = 404
@@ -67,18 +74,23 @@ type privateResourceResource struct {
 
 // privateResourceResourceModel maps the data schema data.
 type privateResourceResourceModel struct {
-	ID                       types.String `tfsdk:"id"`
-	Name                     types.String `tfsdk:"name"`
-	AccessTypes              types.Set    `tfsdk:"access_types"`
-	Addresses                types.Set    `tfsdk:"addresses"`
-	Description              types.String `tfsdk:"description"`
-	ClientReachableAddresses types.Set    `tfsdk:"client_reachable_addresses"`
-	CertificateID            types.Int64  `tfsdk:"certificate_id"`
+	ID                            types.String `tfsdk:"id"`
+	Name                          types.String `tfsdk:"name"`
+	AccessTypes                   types.Set    `tfsdk:"access_types"`
+	Addresses                     types.Set    `tfsdk:"addresses"`
+	Description                   types.String `tfsdk:"description"`
+	ClientReachableAddresses      types.Set    `tfsdk:"client_reachable_addresses"`
+	CertificateID                 types.Int64  `tfsdk:"certificate_id"`
+	BrowserProtocol               types.String `tfsdk:"browser_protocol"`
+	BrowserExternalFQDNPrefix     types.String `tfsdk:"browser_external_fqdn_prefix"`
+	BrowserSNI                    types.String `tfsdk:"browser_sni"`
+	BrowserSSLVerificationEnabled types.Bool   `tfsdk:"browser_ssl_verification_enabled"`
+	BrowserExternalFQDN           types.String `tfsdk:"browser_external_fqdn"`
 }
 
 // ValidAccessTypes returns the valid access types for private resources
 func (m privateResourceResourceModel) ValidAccessTypes() []string {
-	return []string{accessTypeClient, accessTypeNetwork}
+	return []string{accessTypeClient, accessTypeNetwork, accessTypeBrowser}
 }
 
 func validProtocolClientToResourceValues() []string {
@@ -91,6 +103,37 @@ func validProtocolClientToResourceValues() []string {
 	return validProtocols
 }
 
+func validProtocolProxyToResourceValues() []string {
+	validProtocols := make([]string, 0, len(privateapps.AllowedProtocolProxyToResourceEnumValues))
+
+	for _, protocol := range privateapps.AllowedProtocolProxyToResourceEnumValues {
+		validProtocols = append(validProtocols, string(protocol))
+	}
+
+	return validProtocols
+}
+
+func hasAccessType(ctx context.Context, accessTypesSet types.Set, accessType string) (bool, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if accessTypesSet.IsNull() || accessTypesSet.IsUnknown() {
+		return false, diags
+	}
+
+	var accessTypes []string
+	diags.Append(accessTypesSet.ElementsAs(ctx, &accessTypes, true)...)
+	if diags.HasError() {
+		return false, diags
+	}
+
+	for _, candidate := range accessTypes {
+		if candidate == accessType {
+			return true, diags
+		}
+	}
+
+	return false, diags
+}
+
 // addressTypesModel represents address configuration for private resources
 type addressTypesModel struct {
 	Addresses       types.Set `tfsdk:"addresses"`
@@ -101,6 +144,84 @@ type addressTypesModel struct {
 type trafficSelectorModel struct {
 	Ports    types.String `tfsdk:"ports"`
 	Protocol types.String `tfsdk:"protocol"`
+}
+
+type browserProtocolDefaultModifier struct{}
+
+func (m browserProtocolDefaultModifier) Description(context.Context) string {
+	return "Defaults browser_protocol to HTTPS when browser access is enabled."
+}
+
+func (m browserProtocolDefaultModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m browserProtocolDefaultModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if !req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var plan privateResourceResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	hasBrowser, diags := hasAccessType(ctx, plan.AccessTypes, accessTypeBrowser)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if hasBrowser {
+		resp.PlanValue = types.StringValue(browserProtocolHTTPS)
+		return
+	}
+
+	resp.PlanValue = types.StringNull()
+}
+
+type browserSSLVerificationDefaultModifier struct{}
+
+func (m browserSSLVerificationDefaultModifier) Description(context.Context) string {
+	return "Defaults browser_ssl_verification_enabled to true when HTTPS browser access is enabled."
+}
+
+func (m browserSSLVerificationDefaultModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m browserSSLVerificationDefaultModifier) PlanModifyBool(ctx context.Context, req planmodifier.BoolRequest, resp *planmodifier.BoolResponse) {
+	if !req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var plan privateResourceResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	hasBrowser, diags := hasAccessType(ctx, plan.AccessTypes, accessTypeBrowser)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if !hasBrowser {
+		resp.PlanValue = types.BoolNull()
+		return
+	}
+
+	protocol := browserProtocolHTTPS
+	if !plan.BrowserProtocol.IsNull() && !plan.BrowserProtocol.IsUnknown() {
+		protocol = plan.BrowserProtocol.ValueString()
+	}
+	if protocol == browserProtocolHTTPS {
+		resp.PlanValue = types.BoolValue(true)
+		return
+	}
+
+	resp.PlanValue = types.BoolNull()
 }
 
 // Metadata returns the resource type name.
@@ -169,8 +290,123 @@ func (r *privateResourceResource) Schema(_ context.Context, _ resource.SchemaReq
 				Optional:    true,
 				// TODO: Validate "client" in types
 			},
+			"browser_protocol": schema.StringAttribute{
+				Description: "Protocol for browser-based access from the proxy to the private resource. Defaults to HTTPS when browser access is enabled.",
+				Optional:    true,
+				Computed:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf(validProtocolProxyToResourceValues()...),
+				},
+				PlanModifiers: []planmodifier.String{
+					browserProtocolDefaultModifier{},
+				},
+			},
+			"browser_external_fqdn_prefix": schema.StringAttribute{
+				Description: "External FQDN prefix for browser-based access. Required when access_types includes browser.",
+				Optional:    true,
+			},
+			"browser_sni": schema.StringAttribute{
+				Description: "SNI domain name for HTTPS browser-based access.",
+				Optional:    true,
+			},
+			"browser_ssl_verification_enabled": schema.BoolAttribute{
+				Description: "Whether to enable upstream SSL verification for HTTPS browser-based access. Defaults to true when browser_protocol is HTTPS.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					browserSSLVerificationDefaultModifier{},
+				},
+			},
+			"browser_external_fqdn": schema.StringAttribute{
+				Description: "External FQDN for browser-based access returned by the API.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
 		},
 	}
+}
+
+func (r *privateResourceResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var config privateResourceResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(validatePrivateResourcePlan(ctx, &config)...)
+}
+
+func validatePrivateResourcePlan(ctx context.Context, plan *privateResourceResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	hasBrowser, accessDiags := hasAccessType(ctx, plan.AccessTypes, accessTypeBrowser)
+	diags.Append(accessDiags...)
+	if diags.HasError() || !hasBrowser {
+		return diags
+	}
+
+	if plan.BrowserExternalFQDNPrefix.IsNull() || plan.BrowserExternalFQDNPrefix.IsUnknown() || strings.TrimSpace(plan.BrowserExternalFQDNPrefix.ValueString()) == "" {
+		diags.AddAttributeError(
+			path.Root("browser_external_fqdn_prefix"),
+			"Missing Browser External FQDN Prefix",
+			"browser_external_fqdn_prefix must be set when access_types includes \"browser\".",
+		)
+	}
+
+	diags.Append(validateBrowserAccessPorts(ctx, plan)...)
+	return diags
+}
+
+func validateBrowserAccessPorts(ctx context.Context, plan *privateResourceResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if plan.Addresses.IsNull() || plan.Addresses.IsUnknown() {
+		return diags
+	}
+
+	var addressList []addressTypesModel
+	diags.Append(plan.Addresses.ElementsAs(ctx, &addressList, true)...)
+	if diags.HasError() {
+		return diags
+	}
+
+	for _, addressConfig := range addressList {
+		if addressConfig.TrafficSelector.IsNull() || addressConfig.TrafficSelector.IsUnknown() {
+			continue
+		}
+
+		var selectors []trafficSelectorModel
+		diags.Append(addressConfig.TrafficSelector.ElementsAs(ctx, &selectors, true)...)
+		if diags.HasError() {
+			return diags
+		}
+
+		for _, selector := range selectors {
+			if selector.Ports.IsNull() || selector.Ports.IsUnknown() || strings.TrimSpace(selector.Ports.ValueString()) == "" {
+				diags.AddAttributeError(
+					path.Root("addresses"),
+					"Missing Browser Access Port",
+					"Browser-based access requires traffic selector ports to be 80, 443, or both.",
+				)
+				continue
+			}
+
+			for _, port := range strings.Split(selector.Ports.ValueString(), ",") {
+				port = strings.TrimSpace(port)
+				if port != "80" && port != "443" {
+					diags.AddAttributeError(
+						path.Root("addresses"),
+						"Invalid Browser Access Port",
+						fmt.Sprintf("Browser-based access only supports ports 80 and 443. Found %q.", selector.Ports.ValueString()),
+					)
+					break
+				}
+			}
+		}
+	}
+
+	return diags
 }
 
 func (a addressTypesModel) AddressTypesAttributesNested() map[string]schema.Attribute {
@@ -291,6 +527,30 @@ func parseAccessTypes(ctx context.Context, plan *privateResourceResourceModel) (
 			tflog.Debug(ctx, "Configured client-based access", map[string]interface{}{
 				"reachable_addresses_count": len(addresses),
 			})
+
+		case accessTypeBrowser:
+			protocol := privateapps.ProtocolProxyToResource(browserProtocolHTTPS)
+			if !plan.BrowserProtocol.IsNull() && !plan.BrowserProtocol.IsUnknown() {
+				protocol = privateapps.ProtocolProxyToResource(plan.BrowserProtocol.ValueString())
+			}
+
+			browserAccess := privateapps.NewBrowserBasedAccessRequest(accessTypeBrowser, protocol)
+			browserAccess.SetExternalFQDNPrefix(plan.BrowserExternalFQDNPrefix.ValueString())
+
+			if !plan.BrowserSNI.IsNull() && !plan.BrowserSNI.IsUnknown() && strings.TrimSpace(plan.BrowserSNI.ValueString()) != "" {
+				browserAccess.SetSni(plan.BrowserSNI.ValueString())
+			}
+
+			if !plan.BrowserSSLVerificationEnabled.IsNull() && !plan.BrowserSSLVerificationEnabled.IsUnknown() {
+				browserAccess.SetSslVerificationEnabled(plan.BrowserSSLVerificationEnabled.ValueBool())
+			} else if protocol == privateapps.ProtocolProxyToResource(browserProtocolHTTPS) {
+				browserAccess.SetSslVerificationEnabled(true)
+			}
+
+			typeObject.BrowserBasedAccessRequest = browserAccess
+			tflog.Debug(ctx, "Configured browser-based access", map[string]interface{}{
+				"protocol": string(protocol),
+			})
 		}
 
 		accessTypesInner[i] = typeObject
@@ -381,6 +641,10 @@ func (r *privateResourceResource) Create(ctx context.Context, req resource.Creat
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	resp.Diagnostics.Append(validatePrivateResourcePlan(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	tflog.Info(ctx, "Creating private resource", map[string]interface{}{
 		"resource_name": plan.Name.ValueString(),
@@ -406,6 +670,11 @@ func (r *privateResourceResource) Create(ctx context.Context, req resource.Creat
 	// Set the resource ID
 	resourceID := createResp.GetResourceId()
 	plan.ID = types.StringValue(strconv.Itoa(int(resourceID)))
+	readDiags := r.readPrivateResourceIntoState(ctx, resourceID, &plan)
+	resp.Diagnostics.Append(readDiags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	tflog.Info(ctx, "Successfully created private resource", map[string]interface{}{
 		"resource_id":   resourceID,
@@ -513,29 +782,85 @@ func (r *privateResourceResource) Read(ctx context.Context, req resource.ReadReq
 		"response": string(stringResp),
 	})
 
-	state.Name = types.StringValue(*readResp.Name)
-	state.Description = types.StringValue(*readResp.Description)
-
-	// Process addresses
-	addressUpdates, addressDiags := r.processReadAddresses(ctx, readResp.ResourceAddresses)
-	if addressDiags.HasError() {
-		resp.Diagnostics.Append(addressDiags...)
+	resp.Diagnostics.Append(r.applyPrivateResourceResponseToState(ctx, readResp, &state)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Process access types
-	accessTypesDiags := r.processReadAccessTypes(ctx, readResp.AccessTypes, &state)
+	// Set state to fully populated data
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+func (r *privateResourceResource) applyPrivateResourceResponseToState(ctx context.Context, readResp *privateapps.PrivateResourceResponse, state *privateResourceResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if readResp == nil {
+		diags.AddError("Private resource response is nil", "Cannot update Terraform state from an empty private resource response.")
+		return diags
+	}
+
+	if readResp.Name != nil {
+		state.Name = types.StringValue(*readResp.Name)
+	}
+	if readResp.Description != nil {
+		state.Description = types.StringValue(*readResp.Description)
+	} else {
+		state.Description = types.StringNull()
+	}
+	if readResp.CertificateId != nil {
+		state.CertificateID = types.Int64Value(*readResp.CertificateId)
+	}
+
+	addressUpdates, addressDiags := r.processReadAddresses(ctx, readResp.ResourceAddresses)
+	if addressDiags.HasError() {
+		diags.Append(addressDiags...)
+		return diags
+	}
+
+	accessTypesDiags := r.processReadAccessTypes(ctx, readResp.AccessTypes, state)
 	if accessTypesDiags.HasError() {
-		resp.Diagnostics.Append(accessTypesDiags...)
-		return
+		diags.Append(accessTypesDiags...)
+		return diags
 	}
 
 	var respDiags diag.Diagnostics
 	state.Addresses, respDiags = types.SetValueFrom(ctx, types.ObjectType{AttrTypes: addressTypesModel{}.AttrTypes()}, addressUpdates)
-	resp.Diagnostics.Append(respDiags...)
+	diags.Append(respDiags...)
 
-	// Set state to fully populated data
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	return diags
+}
+
+func (r *privateResourceResource) readPrivateResourceIntoState(ctx context.Context, id int64, state *privateResourceResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	var readResp *privateapps.PrivateResourceResponse
+	err := retry.Do(
+		func() error {
+			var httpRes *http.Response
+			var err error
+			readResp, httpRes, err = r.client.PrivateResourcesAPI.GetPrivateResource(ctx, id).Execute()
+			if err != nil {
+				if httpRes != nil && httpRes.StatusCode == privateResourceHTTPNotFound {
+					return fmt.Errorf("private resource %d not found after mutation", id)
+				}
+				return retry.Unrecoverable(fmt.Errorf("failed to read private resource %d after mutation: %w", id, err))
+			}
+
+			return nil
+		},
+		retry.Attempts(retryMaxAttempts),
+		retry.Delay(retryBaseDelay),
+		retry.Context(ctx),
+	)
+	if err != nil {
+		diags.AddError(
+			"Error reading private resource after mutation",
+			err.Error(),
+		)
+		return diags
+	}
+
+	diags.Append(r.applyPrivateResourceResponseToState(ctx, readResp, state)...)
+	return diags
 }
 
 // processReadAddresses converts API address response to internal model
@@ -582,6 +907,7 @@ func (r *privateResourceResource) processReadAccessTypes(ctx context.Context, ap
 	})
 
 	var clientTypeMissing bool = true
+	var browserTypeMissing bool = true
 
 	// We need to use type assertion or reflection to handle the API response
 	// For now, let's use the original approach but with better logging
@@ -607,11 +933,59 @@ func (r *privateResourceResource) processReadAccessTypes(ctx context.Context, ap
 				return diags
 			}
 		}
+
+		if access.BrowserBasedAccessResponse != nil {
+			browserTypeMissing = false
+			tflog.Debug(ctx, "Processing browser-based access configuration")
+
+			state.BrowserProtocol = types.StringValue(string(access.BrowserBasedAccessResponse.Protocol))
+			if access.BrowserBasedAccessResponse.Sni != nil {
+				state.BrowserSNI = types.StringValue(*access.BrowserBasedAccessResponse.Sni)
+			} else {
+				state.BrowserSNI = types.StringNull()
+			}
+			if access.BrowserBasedAccessResponse.SslVerificationEnabled != nil {
+				state.BrowserSSLVerificationEnabled = types.BoolValue(*access.BrowserBasedAccessResponse.SslVerificationEnabled)
+			} else {
+				state.BrowserSSLVerificationEnabled = types.BoolNull()
+			}
+			if access.BrowserBasedAccessResponse.ExternalFQDN != nil {
+				state.BrowserExternalFQDN = types.StringValue(*access.BrowserBasedAccessResponse.ExternalFQDN)
+			} else {
+				state.BrowserExternalFQDN = types.StringNull()
+			}
+		}
 	}
 
 	if clientTypeMissing {
 		state.ClientReachableAddresses = types.SetNull(types.StringType)
 		tflog.Debug(ctx, "No client-based access found, setting null")
+	}
+	if browserTypeMissing {
+		stateHasBrowser, stateDiags := hasAccessType(ctx, state.AccessTypes, accessTypeBrowser)
+		if stateDiags.HasError() {
+			diags.Append(stateDiags...)
+			return diags
+		}
+
+		if stateHasBrowser {
+			if state.BrowserProtocol.IsNull() || state.BrowserProtocol.IsUnknown() {
+				state.BrowserProtocol = types.StringValue(browserProtocolHTTPS)
+			}
+			if state.BrowserSSLVerificationEnabled.IsNull() || state.BrowserSSLVerificationEnabled.IsUnknown() {
+				state.BrowserSSLVerificationEnabled = types.BoolValue(true)
+			}
+			if state.BrowserExternalFQDN.IsUnknown() {
+				state.BrowserExternalFQDN = types.StringNull()
+			}
+			tflog.Debug(ctx, "Browser-based access not returned by API, preserving configured browser state")
+		} else {
+			state.BrowserProtocol = types.StringNull()
+			state.BrowserSNI = types.StringNull()
+			state.BrowserSSLVerificationEnabled = types.BoolNull()
+			state.BrowserExternalFQDN = types.StringNull()
+			tflog.Debug(ctx, "No browser-based access found, setting null")
+		}
 	}
 
 	return diags
@@ -624,6 +998,10 @@ func (r *privateResourceResource) Update(ctx context.Context, req resource.Updat
 	resp.Diagnostics.Append(diags...)
 	diags = req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(validatePrivateResourcePlan(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -656,7 +1034,12 @@ func (r *privateResourceResource) hasResourceChanges(plan, state privateResource
 		!plan.Description.Equal(state.Description) ||
 		!plan.AccessTypes.Equal(state.AccessTypes) ||
 		!plan.Addresses.Equal(state.Addresses) ||
-		!plan.CertificateID.Equal(state.CertificateID)
+		!plan.ClientReachableAddresses.Equal(state.ClientReachableAddresses) ||
+		!plan.CertificateID.Equal(state.CertificateID) ||
+		!plan.BrowserProtocol.Equal(state.BrowserProtocol) ||
+		!plan.BrowserExternalFQDNPrefix.Equal(state.BrowserExternalFQDNPrefix) ||
+		!plan.BrowserSNI.Equal(state.BrowserSNI) ||
+		!plan.BrowserSSLVerificationEnabled.Equal(state.BrowserSSLVerificationEnabled)
 }
 
 // updatePrivateResource performs the actual resource update
@@ -687,6 +1070,11 @@ func (r *privateResourceResource) updatePrivateResource(ctx context.Context, pla
 	tflog.Debug(ctx, "Update private resource response", map[string]interface{}{
 		"response": string(updateString),
 	})
+
+	diagnostics.Append(r.readPrivateResourceIntoState(ctx, int64(id), plan)...)
+	if diagnostics.HasError() {
+		return fmt.Errorf("failed to update state from API response")
+	}
 
 	tflog.Info(ctx, "Successfully updated private resource", map[string]interface{}{
 		"resource_id": plan.ID.ValueString(),
