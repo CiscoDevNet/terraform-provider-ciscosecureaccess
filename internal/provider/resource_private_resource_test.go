@@ -14,7 +14,11 @@ import (
 	"testing"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
@@ -70,8 +74,12 @@ func TestPrivateResourceResource_browserRequestDefaults(t *testing.T) {
 
 	browserAccess := req.AccessTypes[0].BrowserBasedAccessRequest
 	if browserAccess == nil {
-		payload, _ := json.Marshal(req.AccessTypes[0])
-		t.Fatalf("expected browser access request, got %s", payload)
+		if payload, err := json.Marshal(req.AccessTypes[0]); err == nil {
+			tflog.Debug(ctx, "unexpected access type payload", map[string]interface{}{
+				"payload": string(payload),
+			})
+		}
+		t.Fatal("expected browser access request")
 	}
 	if browserAccess.Type != testAccessTypeBrowser {
 		t.Fatalf("expected browser type %q, got %q", testAccessTypeBrowser, browserAccess.Type)
@@ -84,6 +92,47 @@ func TestPrivateResourceResource_browserRequestDefaults(t *testing.T) {
 	}
 	if browserAccess.SslVerificationEnabled == nil || !*browserAccess.SslVerificationEnabled {
 		t.Fatalf("expected SSL verification to default to true, got %#v", browserAccess.SslVerificationEnabled)
+	}
+}
+
+func TestPrivateResourceResource_browserPlanModifierDefaults(t *testing.T) {
+	ctx := context.Background()
+	model := testPrivateResourceBrowserPlan(t, []string{testAccessTypeBrowser}, testPrivateResourcePortHTTPS)
+
+	var schemaResp fwresource.SchemaResponse
+	(&privateResourceResource{}).Schema(ctx, fwresource.SchemaRequest{}, &schemaResp)
+	if schemaResp.Diagnostics.HasError() {
+		t.Fatalf("unexpected schema diagnostics: %v", schemaResp.Diagnostics)
+	}
+
+	plan := tfsdk.Plan{Schema: schemaResp.Schema}
+	diags := plan.Set(ctx, &model)
+	if diags.HasError() {
+		t.Fatalf("failed to build plan: %v", diags)
+	}
+
+	var protocolResp planmodifier.StringResponse
+	browserProtocolDefaultModifier{}.PlanModifyString(ctx, planmodifier.StringRequest{
+		ConfigValue: types.StringNull(),
+		Plan:        plan,
+	}, &protocolResp)
+	if protocolResp.Diagnostics.HasError() {
+		t.Fatalf("unexpected protocol diagnostics: %v", protocolResp.Diagnostics)
+	}
+	if protocolResp.PlanValue.ValueString() != browserProtocolHTTPS {
+		t.Fatalf("expected browser_protocol default %q, got %q", browserProtocolHTTPS, protocolResp.PlanValue.ValueString())
+	}
+
+	var sslResp planmodifier.BoolResponse
+	browserSSLVerificationDefaultModifier{}.PlanModifyBool(ctx, planmodifier.BoolRequest{
+		ConfigValue: types.BoolNull(),
+		Plan:        plan,
+	}, &sslResp)
+	if sslResp.Diagnostics.HasError() {
+		t.Fatalf("unexpected SSL verification diagnostics: %v", sslResp.Diagnostics)
+	}
+	if !sslResp.PlanValue.ValueBool() {
+		t.Fatalf("expected browser_ssl_verification_enabled to default to true")
 	}
 }
 
@@ -276,6 +325,10 @@ func TestPrivateResourceResource_accessTypeCombinationsCRUD(t *testing.T) {
 								resource.TestCheckResourceAttr(testPrivateResourceName, "description", testPrivateResourceUpdatedDesc),
 							),
 							ConfigStateChecks: buildCombinationAccessStateChecks(rName, accessTypes, testPrivateResourceUpdatedDesc),
+						},
+						{
+							Config:   testAccPrivateResourceCombinationConfig(rName, accessTypes, browserPrefix, testPrivateResourceUpdatedDesc),
+							PlanOnly: true,
 						},
 					},
 				})

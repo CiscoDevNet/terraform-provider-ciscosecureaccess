@@ -157,7 +157,7 @@ func (m browserProtocolDefaultModifier) MarkdownDescription(ctx context.Context)
 }
 
 func (m browserProtocolDefaultModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
-	if !req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+	if req.ConfigValue.IsUnknown() || !req.ConfigValue.IsNull() {
 		return
 	}
 
@@ -192,7 +192,7 @@ func (m browserSSLVerificationDefaultModifier) MarkdownDescription(ctx context.C
 }
 
 func (m browserSSLVerificationDefaultModifier) PlanModifyBool(ctx context.Context, req planmodifier.BoolRequest, resp *planmodifier.BoolResponse) {
-	if !req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+	if req.ConfigValue.IsUnknown() || !req.ConfigValue.IsNull() {
 		return
 	}
 
@@ -641,10 +641,6 @@ func (r *privateResourceResource) Create(ctx context.Context, req resource.Creat
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	resp.Diagnostics.Append(validatePrivateResourcePlan(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
 
 	tflog.Info(ctx, "Creating private resource", map[string]interface{}{
 		"resource_name": plan.Name.ValueString(),
@@ -808,6 +804,8 @@ func (r *privateResourceResource) applyPrivateResourceResponseToState(ctx contex
 	}
 	if readResp.CertificateId != nil {
 		state.CertificateID = types.Int64Value(*readResp.CertificateId)
+	} else {
+		state.CertificateID = types.Int64Null()
 	}
 
 	addressUpdates, addressDiags := r.processReadAddresses(ctx, readResp.ResourceAddresses)
@@ -998,10 +996,6 @@ func (r *privateResourceResource) Update(ctx context.Context, req resource.Updat
 	resp.Diagnostics.Append(diags...)
 	diags = req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	resp.Diagnostics.Append(validatePrivateResourcePlan(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
