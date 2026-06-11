@@ -157,7 +157,10 @@ func (m browserProtocolDefaultModifier) MarkdownDescription(ctx context.Context)
 }
 
 func (m browserProtocolDefaultModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
-	if req.ConfigValue.IsUnknown() || !req.ConfigValue.IsNull() {
+	if req.ConfigValue.IsUnknown() {
+		return
+	}
+	if !req.ConfigValue.IsNull() {
 		return
 	}
 
@@ -192,7 +195,10 @@ func (m browserSSLVerificationDefaultModifier) MarkdownDescription(ctx context.C
 }
 
 func (m browserSSLVerificationDefaultModifier) PlanModifyBool(ctx context.Context, req planmodifier.BoolRequest, resp *planmodifier.BoolResponse) {
-	if req.ConfigValue.IsUnknown() || !req.ConfigValue.IsNull() {
+	if req.ConfigValue.IsUnknown() {
+		return
+	}
+	if !req.ConfigValue.IsNull() {
 		return
 	}
 
