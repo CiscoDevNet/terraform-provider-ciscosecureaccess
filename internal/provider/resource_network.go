@@ -16,8 +16,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
 	"github.com/CiscoDevNet/go-ciscosecureaccess/networks"
@@ -103,6 +105,9 @@ func (r *networkResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Description:         "Status of the network. Valid values are OPEN or CLOSED.",
 				MarkdownDescription: "Status of the network. Valid values are `OPEN` or `CLOSED`.",
 				Required:            true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("OPEN", "CLOSED"),
+				},
 			},
 			"created_at": schema.StringAttribute{
 				Description:         "RFC3339 timestamp of when the network was created.",
@@ -136,12 +141,13 @@ func (r *networkResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	planRep, _ := json.Marshal(plan)
-	tflog.Debug(ctx, "Local network definition", map[string]interface{}{"definition": string(planRep)})
+	if planRep, err := json.Marshal(plan); err == nil {
+		tflog.Debug(ctx, "Local network definition", map[string]interface{}{"definition": string(planRep)})
+	}
 
 	name := plan.Name.ValueString()
 	createNetworkRequest := *networks.NewCreateNetworkRequest(name, plan.PrefixLength.ValueInt64(), plan.IsDynamic.ValueBool(), plan.Status.ValueString())
-	if !plan.IpAddress.IsNull() {
+	if !plan.IpAddress.IsNull() && !plan.IpAddress.IsUnknown() {
 		createNetworkRequest.SetIpAddress(plan.IpAddress.ValueString())
 	}
 
@@ -215,7 +221,7 @@ func (r *networkResource) Update(ctx context.Context, req resource.UpdateRequest
 	networkId := plan.Id.ValueInt64()
 	updateNetworkRequest := *networks.NewUpdateNetworkRequest(plan.Name.ValueString(), plan.IsDynamic.ValueBool(), plan.Status.ValueString())
 	updateNetworkRequest.SetPrefixLength(plan.PrefixLength.ValueInt64())
-	if !plan.IpAddress.IsNull() {
+	if !plan.IpAddress.IsNull() && !plan.IpAddress.IsUnknown() {
 		updateNetworkRequest.SetIpAddress(plan.IpAddress.ValueString())
 	}
 
@@ -273,7 +279,9 @@ func (r *networkResource) Delete(ctx context.Context, req resource.DeleteRequest
 func updateNetworkModelFromObject(model *networkResourceModel, network *networks.NetworkObject) {
 	model.Id = types.Int64Value(network.GetOriginId())
 	model.Name = types.StringValue(network.GetName())
-	model.IpAddress = types.StringValue(network.GetIpAddress())
+	if !model.IpAddress.IsNull() && !model.IpAddress.IsUnknown() {
+		model.IpAddress = types.StringValue(network.GetIpAddress())
+	}
 	model.PrefixLength = types.Int64Value(network.GetPrefixLength())
 	model.IsDynamic = types.BoolValue(network.GetIsDynamic())
 	model.Status = types.StringValue(network.GetStatus())
