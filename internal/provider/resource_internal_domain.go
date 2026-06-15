@@ -103,16 +103,19 @@ func (r *internalDomainResource) Schema(_ context.Context, _ resource.SchemaRequ
 				Description:         "Human-readable description for the internal domain.",
 				MarkdownDescription: "Human-readable description for the internal domain.",
 				Optional:            true,
+				Computed:            true,
 			},
 			"include_all_vas": schema.BoolAttribute{
 				Description:         "When true, applies the internal domain to all virtual appliances. Mutually exclusive with site_ids.",
 				MarkdownDescription: "When `true`, applies the internal domain to all virtual appliances. Mutually exclusive with `site_ids`.",
 				Optional:            true,
+				Computed:            true,
 			},
 			"include_all_mobile_devices": schema.BoolAttribute{
 				Description:         "When true, applies the internal domain to all mobile devices.",
 				MarkdownDescription: "When `true`, applies the internal domain to all mobile devices.",
 				Optional:            true,
+				Computed:            true,
 			},
 			"site_ids": schema.ListAttribute{
 				Description:         "List of site IDs to associate with this internal domain. Mutually exclusive with include_all_vas = true.",
@@ -145,8 +148,9 @@ func (r *internalDomainResource) Create(ctx context.Context, req resource.Create
 		return
 	}
 
-	planRep, _ := json.Marshal(plan)
-	tflog.Debug(ctx, "Local internal domain definition", map[string]interface{}{"definition": string(planRep)})
+	if planRep, err := json.Marshal(plan); err == nil {
+		tflog.Debug(ctx, "Local internal domain definition", map[string]interface{}{"definition": string(planRep)})
+	}
 
 	domain := plan.Domain.ValueString()
 	createInternalDomainRequest := buildInternalDomainRequest(ctx, plan, resp.Diagnostics.AddError)
