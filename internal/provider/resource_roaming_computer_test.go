@@ -143,13 +143,13 @@ func TestRoamingComputerResource_importAndUpdate(t *testing.T) {
 					ImportStateId:     deviceId,
 					ImportStateVerify: false,
 				},
-				{
-					Config: testAccRoamingComputerConfig(deviceId, updatedName),
-					Check: resource.ComposeAggregateTestCheckFunc(
-						resource.TestCheckResourceAttr(testRoamingComputerResourceName, "device_id", deviceId),
-						resource.TestCheckResourceAttr(testRoamingComputerResourceName, "name", updatedName),
-					),
-				},
+			{
+				Config: testAccRoamingComputerConfig(updatedName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(testRoamingComputerResourceName, "device_id", deviceId),
+					resource.TestCheckResourceAttr(testRoamingComputerResourceName, "name", updatedName),
+				),
+			},
 			},
 		})
 	}, minWaitTime)
@@ -175,11 +175,10 @@ func testAccCheckRoamingComputerDestroy(s *terraform.State) error {
 	return nil
 }
 
-func testAccRoamingComputerConfig(deviceId, name string) string {
+func testAccRoamingComputerConfig(name string) string {
 	return fmt.Sprintf(`
 resource "ciscosecureaccess_roaming_computer" "test_resource" {
-  device_id = %q
-  name      = %q
+  name = %q
 }
-`, deviceId, name)
+`, name)
 }
