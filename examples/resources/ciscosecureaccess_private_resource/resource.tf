@@ -28,12 +28,13 @@ resource "ciscosecureaccess_private_resource" "browser_resource" {
   name                         = "TF-Test-Browser-Resource"
   access_types                 = ["browser"]
   description                  = "Test browser-based ZTNA resource"
+  browser_protocol             = "https"
   browser_external_fqdn_prefix = "tf-test-browser"
 
   addresses = [{
     addresses = ["jira.internal.example.com"]
     traffic_selector = [
-      { ports = "443", protocol = "tcp" },
+      { ports = "443", protocol = "http/https" },
     ]
   }]
 }
@@ -43,13 +44,14 @@ resource "ciscosecureaccess_private_resource" "combined_ztna_resource" {
   access_types                 = ["browser", "client", "network"]
   client_reachable_addresses   = ["10.10.10.3"]
   description                  = "Test combined browser, client, and network private resource"
+  browser_protocol             = "https"
   browser_external_fqdn_prefix = "tf-test-combined"
   browser_sni                  = "jira.internal.example.com"
 
   addresses = [{
     addresses = ["10.10.10.3/32"]
     traffic_selector = [
-      { ports = "443", protocol = "tcp" },
+      { ports = "443", protocol = "http/https" },
     ]
   }]
 }

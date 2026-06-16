@@ -46,7 +46,10 @@ const (
 	accessTypeBrowser = "browser"
 
 	// Browser-based access defaults
-	browserProtocolHTTPS = "HTTPS"
+	browserProtocolHTTP   = "http"
+	browserProtocolHTTPS  = "https"
+	browserProtocolSSH    = "ssh"
+	browserProtocolRDPTCP = "rdp-tcp"
 
 	// HTTP status codes
 	privateResourceHTTPNotFound    = 404
@@ -103,14 +106,26 @@ func validProtocolClientToResourceValues() []string {
 	return validProtocols
 }
 
-func validProtocolProxyToResourceValues() []string {
-	validProtocols := make([]string, 0, len(privateapps.AllowedProtocolProxyToResourceEnumValues))
-
-	for _, protocol := range privateapps.AllowedProtocolProxyToResourceEnumValues {
-		validProtocols = append(validProtocols, string(protocol))
+func validBrowserProtocolValues() []string {
+	return []string{
+		browserProtocolHTTP,
+		browserProtocolHTTPS,
+		browserProtocolSSH,
+		browserProtocolRDPTCP,
 	}
+}
 
-	return validProtocols
+func expectedBrowserTrafficSelectorProtocol(browserProtocol string) string {
+	switch strings.ToLower(strings.TrimSpace(browserProtocol)) {
+	case browserProtocolHTTP, browserProtocolHTTPS:
+		return string(privateapps.HTTP_HTTPS)
+	case browserProtocolSSH:
+		return string(privateapps.SSH)
+	case browserProtocolRDPTCP:
+		return string(privateapps.RDP_TCP)
+	default:
+		return ""
+	}
 }
 
 func hasAccessType(ctx context.Context, accessTypesSet types.Set, accessType string) (bool, diag.Diagnostics) {
@@ -149,7 +164,7 @@ type trafficSelectorModel struct {
 type browserProtocolDefaultModifier struct{}
 
 func (m browserProtocolDefaultModifier) Description(context.Context) string {
-	return "Defaults browser_protocol to HTTPS when browser access is enabled."
+	return "Defaults browser_protocol to https when browser access is enabled."
 }
 
 func (m browserProtocolDefaultModifier) MarkdownDescription(ctx context.Context) string {
@@ -187,7 +202,7 @@ func (m browserProtocolDefaultModifier) PlanModifyString(ctx context.Context, re
 type browserSSLVerificationDefaultModifier struct{}
 
 func (m browserSSLVerificationDefaultModifier) Description(context.Context) string {
-	return "Defaults browser_ssl_verification_enabled to true when HTTPS browser access is enabled."
+	return "Defaults browser_ssl_verification_enabled to true when browser access is enabled."
 }
 
 func (m browserSSLVerificationDefaultModifier) MarkdownDescription(ctx context.Context) string {
@@ -218,16 +233,7 @@ func (m browserSSLVerificationDefaultModifier) PlanModifyBool(ctx context.Contex
 		return
 	}
 
-	protocol := browserProtocolHTTPS
-	if !plan.BrowserProtocol.IsNull() && !plan.BrowserProtocol.IsUnknown() {
-		protocol = plan.BrowserProtocol.ValueString()
-	}
-	if protocol == browserProtocolHTTPS {
-		resp.PlanValue = types.BoolValue(true)
-		return
-	}
-
-	resp.PlanValue = types.BoolNull()
+	resp.PlanValue = types.BoolValue(true)
 }
 
 // Metadata returns the resource type name.
@@ -297,11 +303,11 @@ func (r *privateResourceResource) Schema(_ context.Context, _ resource.SchemaReq
 				// TODO: Validate "client" in types
 			},
 			"browser_protocol": schema.StringAttribute{
-				Description: "Protocol for browser-based access from the proxy to the private resource. Defaults to HTTPS when browser access is enabled.",
+				Description: "Protocol for browser-based access from the proxy to the private resource. Defaults to https when browser access is enabled.",
 				Optional:    true,
 				Computed:    true,
 				Validators: []validator.String{
-					stringvalidator.OneOf(validProtocolProxyToResourceValues()...),
+					stringvalidator.OneOf(validBrowserProtocolValues()...),
 				},
 				PlanModifiers: []planmodifier.String{
 					browserProtocolDefaultModifier{},
@@ -316,7 +322,7 @@ func (r *privateResourceResource) Schema(_ context.Context, _ resource.SchemaReq
 				Optional:    true,
 			},
 			"browser_ssl_verification_enabled": schema.BoolAttribute{
-				Description: "Whether to enable upstream SSL verification for HTTPS browser-based access. Defaults to true when browser_protocol is HTTPS.",
+				Description: "Whether to enable upstream SSL verification for browser-based access. Defaults to true when browser access is enabled.",
 				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.Bool{
@@ -362,6 +368,7 @@ func validatePrivateResourcePlan(ctx context.Context, plan *privateResourceResou
 	}
 
 	diags.Append(validateBrowserAccessPorts(ctx, plan)...)
+	diags.Append(validateBrowserAccessProtocols(ctx, plan)...)
 	return diags
 }
 
@@ -408,6 +415,63 @@ func validateBrowserAccessPorts(ctx context.Context, plan *privateResourceResour
 					)
 					break
 				}
+			}
+		}
+	}
+
+	return diags
+}
+
+func validateBrowserAccessProtocols(ctx context.Context, plan *privateResourceResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if plan.Addresses.IsNull() || plan.Addresses.IsUnknown() {
+		return diags
+	}
+
+	var addressList []addressTypesModel
+	diags.Append(plan.Addresses.ElementsAs(ctx, &addressList, true)...)
+	if diags.HasError() {
+		return diags
+	}
+
+	browserProtocol := browserProtocolHTTPS
+	if !plan.BrowserProtocol.IsNull() && !plan.BrowserProtocol.IsUnknown() {
+		browserProtocol = plan.BrowserProtocol.ValueString()
+	}
+
+	expectedProtocol := expectedBrowserTrafficSelectorProtocol(browserProtocol)
+	if expectedProtocol == "" {
+		return diags
+	}
+
+	for _, addressConfig := range addressList {
+		if addressConfig.TrafficSelector.IsNull() || addressConfig.TrafficSelector.IsUnknown() {
+			continue
+		}
+
+		var selectors []trafficSelectorModel
+		diags.Append(addressConfig.TrafficSelector.ElementsAs(ctx, &selectors, true)...)
+		if diags.HasError() {
+			return diags
+		}
+
+		for _, selector := range selectors {
+			if selector.Protocol.IsNull() || selector.Protocol.IsUnknown() || strings.TrimSpace(selector.Protocol.ValueString()) == "" {
+				diags.AddAttributeError(
+					path.Root("addresses"),
+					"Missing Browser Access Protocol",
+					fmt.Sprintf("Browser-based access with browser_protocol %q requires traffic selector protocol %q.", browserProtocol, expectedProtocol),
+				)
+				continue
+			}
+
+			protocol := strings.TrimSpace(selector.Protocol.ValueString())
+			if protocol != expectedProtocol {
+				diags.AddAttributeError(
+					path.Root("addresses"),
+					"Invalid Browser Access Protocol",
+					fmt.Sprintf("Browser-based access with browser_protocol %q requires traffic selector protocol %q. Found %q.", browserProtocol, expectedProtocol, protocol),
+				)
 			}
 		}
 	}

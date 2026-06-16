@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
+	"github.com/CiscoDevNet/go-ciscosecureaccess/privateapps"
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -188,6 +189,69 @@ func TestPrivateResourceResource_browserValidationRejectsUnsupportedPorts(t *tes
 	}
 }
 
+func TestPrivateResourceResource_browserValidationAllowsSupportedProtocols(t *testing.T) {
+	ctx := context.Background()
+
+	testCases := []struct {
+		name             string
+		browserProtocol  string
+		selectorProtocol string
+	}{
+		{name: browserProtocolHTTPS, browserProtocol: browserProtocolHTTPS, selectorProtocol: testPrivateResourceProtoHTTPS},
+		{name: browserProtocolHTTP, browserProtocol: browserProtocolHTTP, selectorProtocol: testPrivateResourceProtoHTTPS},
+		{name: browserProtocolSSH, browserProtocol: browserProtocolSSH, selectorProtocol: testPrivateResourceProtoSSH},
+		{name: browserProtocolRDPTCP, browserProtocol: browserProtocolRDPTCP, selectorProtocol: testPrivateResourceProtoRDP},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			plan := testPrivateResourceBrowserPlanWithBrowserProtocolAndSelector(t, []string{testAccessTypeBrowser}, testPrivateResourcePortHTTPS, testCase.browserProtocol, testCase.selectorProtocol)
+
+			diags := validatePrivateResourcePlan(ctx, &plan)
+			if diags.HasError() {
+				t.Fatalf("unexpected diagnostics for supported browser access protocol pair %q/%q: %v", testCase.browserProtocol, testCase.selectorProtocol, diags)
+			}
+		})
+	}
+}
+
+func TestPrivateResourceResource_browserValidationRejectsUnsupportedProtocols(t *testing.T) {
+	ctx := context.Background()
+
+	for _, protocol := range []string{string(privateapps.ANY), string(privateapps.TCP), string(privateapps.UDP)} {
+		protocol := protocol
+		t.Run(protocol, func(t *testing.T) {
+			plan := testPrivateResourceBrowserPlanWithSelector(t, []string{testAccessTypeBrowser}, testPrivateResourcePortHTTPS, protocol)
+
+			diags := validatePrivateResourcePlan(ctx, &plan)
+			if !diags.HasError() {
+				t.Fatalf("expected diagnostics for unsupported browser access protocol %q", protocol)
+			}
+		})
+	}
+}
+
+func TestPrivateResourceResource_browserValidationRejectsMismatchedProtocols(t *testing.T) {
+	ctx := context.Background()
+	plan := testPrivateResourceBrowserPlanWithBrowserProtocolAndSelector(t, []string{testAccessTypeBrowser}, testPrivateResourcePortHTTPS, browserProtocolSSH, testPrivateResourceProtoHTTPS)
+
+	diags := validatePrivateResourcePlan(ctx, &plan)
+	if !diags.HasError() {
+		t.Fatal("expected diagnostics for mismatched browser access protocol pair")
+	}
+}
+
+func TestPrivateResourceResource_browserValidationDoesNotRestrictNonBrowserProtocols(t *testing.T) {
+	ctx := context.Background()
+	plan := testPrivateResourceBrowserPlanWithSelector(t, []string{testAccessTypeNetwork}, "8443", string(privateapps.TCP))
+
+	diags := validatePrivateResourcePlan(ctx, &plan)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics for non-browser access protocol: %v", diags)
+	}
+}
+
 func TestPrivateResourceResource_basic(t *testing.T) {
 	rateLimitedTest(t, func() {
 		rName := generateTestResourceName()
@@ -344,6 +408,16 @@ func generateTestResourceName() string {
 
 func testPrivateResourceBrowserPlan(t *testing.T, accessTypes []string, ports string) privateResourceResourceModel {
 	t.Helper()
+	return testPrivateResourceBrowserPlanWithSelector(t, accessTypes, ports, testPrivateResourceProtoHTTPS)
+}
+
+func testPrivateResourceBrowserPlanWithSelector(t *testing.T, accessTypes []string, ports string, protocol string) privateResourceResourceModel {
+	t.Helper()
+	return testPrivateResourceBrowserPlanWithBrowserProtocolAndSelector(t, accessTypes, ports, "", protocol)
+}
+
+func testPrivateResourceBrowserPlanWithBrowserProtocolAndSelector(t *testing.T, accessTypes []string, ports string, browserProtocol string, selectorProtocol string) privateResourceResourceModel {
+	t.Helper()
 	ctx := context.Background()
 
 	accessTypesSet, diags := types.SetValueFrom(ctx, types.StringType, accessTypes)
@@ -363,7 +437,7 @@ func testPrivateResourceBrowserPlan(t *testing.T, accessTypes []string, ports st
 		types.ObjectType{AttrTypes: trafficSelectorModel{}.AttrTypes()},
 		[]trafficSelectorModel{{
 			Ports:    types.StringValue(ports),
-			Protocol: types.StringValue(testPrivateResourceProtoHTTPS),
+			Protocol: types.StringValue(selectorProtocol),
 		}},
 	)
 	if diags.HasError() {
@@ -381,7 +455,7 @@ func testPrivateResourceBrowserPlan(t *testing.T, accessTypes []string, ports st
 		t.Fatalf("failed to build resource addresses set: %v", diags)
 	}
 
-	return privateResourceResourceModel{
+	model := privateResourceResourceModel{
 		Name:                          types.StringValue(testPrivateResourceFixedName),
 		AccessTypes:                   accessTypesSet,
 		Addresses:                     resourceAddressesSet,
@@ -394,6 +468,12 @@ func testPrivateResourceBrowserPlan(t *testing.T, accessTypes []string, ports st
 		BrowserSSLVerificationEnabled: types.BoolNull(),
 		BrowserExternalFQDN:           types.StringNull(),
 	}
+
+	if browserProtocol != "" {
+		model.BrowserProtocol = types.StringValue(browserProtocol)
+	}
+
+	return model
 }
 
 // buildNetworkAccessStateChecks returns state checks for network access type
