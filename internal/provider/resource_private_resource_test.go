@@ -169,6 +169,17 @@ func TestPrivateResourceResource_browserValidationRequiresPrefix(t *testing.T) {
 	}
 }
 
+func TestPrivateResourceResource_browserRequestRequiresPrefix(t *testing.T) {
+	ctx := context.Background()
+	plan := testPrivateResourceBrowserPlan(t, []string{testAccessTypeBrowser}, testPrivateResourcePortHTTPS)
+	plan.BrowserExternalFQDNPrefix = types.StringNull()
+
+	_, diags := formatCreatePrivateResourceRequest(ctx, &plan)
+	if !diags.HasError() {
+		t.Fatal("expected diagnostics for missing browser_external_fqdn_prefix")
+	}
+}
+
 func TestPrivateResourceResource_browserValidationAllowsHTTPAndHTTPSPorts(t *testing.T) {
 	ctx := context.Background()
 	plan := testPrivateResourceBrowserPlan(t, []string{testAccessTypeBrowser}, "80, 443")

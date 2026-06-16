@@ -605,6 +605,14 @@ func parseAccessTypes(ctx context.Context, plan *privateResourceResourceModel) (
 			}
 
 			browserAccess := privateapps.NewBrowserBasedAccessRequest(accessTypeBrowser, protocol)
+			if plan.BrowserExternalFQDNPrefix.IsNull() || plan.BrowserExternalFQDNPrefix.IsUnknown() || strings.TrimSpace(plan.BrowserExternalFQDNPrefix.ValueString()) == "" {
+				diags.AddAttributeError(
+					path.Root("browser_external_fqdn_prefix"),
+					"Missing Browser External FQDN Prefix",
+					"browser_external_fqdn_prefix must be set when access_types includes \"browser\".",
+				)
+				return nil, diags
+			}
 			browserAccess.SetExternalFQDNPrefix(plan.BrowserExternalFQDNPrefix.ValueString())
 
 			if !plan.BrowserSNI.IsNull() && !plan.BrowserSNI.IsUnknown() && strings.TrimSpace(plan.BrowserSNI.ValueString()) != "" {
@@ -1084,6 +1092,9 @@ func (r *privateResourceResource) Update(ctx context.Context, req resource.Updat
 			)
 			return
 		}
+		if resp.Diagnostics.HasError() {
+			return
+		}
 	} else {
 		tflog.Debug(ctx, "No changes detected, skipping update")
 	}
@@ -1137,7 +1148,7 @@ func (r *privateResourceResource) updatePrivateResource(ctx context.Context, pla
 
 	diagnostics.Append(r.readPrivateResourceIntoState(ctx, int64(id), plan)...)
 	if diagnostics.HasError() {
-		return fmt.Errorf("failed to update state from API response")
+		return nil
 	}
 
 	tflog.Info(ctx, "Successfully updated private resource", map[string]interface{}{
