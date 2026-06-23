@@ -31,10 +31,10 @@ func FilterSchema() schema.NestedAttributeObject {
 }
 
 func (f *Filter) BuildQueryFilters() (string, error) {
-	filterMap := map[string]string{f.Name.String(): f.Query.String()}
+	filterMap := map[string]string{f.Name.ValueString(): f.Query.ValueString()}
 	filterObject, err := json.Marshal(filterMap)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal filter map for query '%s': %w", f.Query.String(), err)
+		return "", fmt.Errorf("failed to marshal filter map for query '%s': %w", f.Query.ValueString(), err)
 	}
 	return string(filterObject), nil
 }

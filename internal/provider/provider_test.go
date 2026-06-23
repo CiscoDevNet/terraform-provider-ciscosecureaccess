@@ -15,25 +15,36 @@ import (
 )
 
 var testSSEClientFactory *client.SSEClientFactory
+
 var testAccCiscoSecureAccessProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
 	"ciscosecureaccess": providerserver.NewProtocol6WithError(New("0.0.1")()),
 }
 
 func testAccPreCheck(t *testing.T) {
-	// Code can be added here as pre-execution steps to all unit tests
+	if os.Getenv("CISCOSECUREACCESS_KEY_ID") == "" {
+		t.Skip("CISCOSECUREACCESS_KEY_ID must be set for acceptance tests")
+	}
+	if os.Getenv("CISCOSECUREACCESS_KEY_SECRET") == "" {
+		t.Skip("CISCOSECUREACCESS_KEY_SECRET must be set for acceptance tests")
+	}
 }
 
 func testClientFactory(t *testing.T) *client.SSEClientFactory {
-	if testSSEClientFactory == nil {
-		keyId, ok := os.LookupEnv("CISCOSECUREACCESS_KEY_ID")
-		require.True(t, ok, "missing CISCOSECUREACCESS_KEY_ID")
-		keySecret, ok := os.LookupEnv("CISCOSECUREACCESS_KEY_SECRET")
-		require.True(t, ok, "missing CISCOSECUREACCESS_KEY_SECRET")
+	t.Helper()
 
-		testSSEClientFactory = &client.SSEClientFactory{
-			KeyId:     keyId,
-			KeySecret: keySecret,
-		}
+	keyId := os.Getenv("CISCOSECUREACCESS_KEY_ID")
+	if keyId == "" {
+		t.Skip("CISCOSECUREACCESS_KEY_ID must be set for acceptance tests")
+	}
+	keySecret := os.Getenv("CISCOSECUREACCESS_KEY_SECRET")
+	if keySecret == "" {
+		t.Skip("CISCOSECUREACCESS_KEY_SECRET must be set for acceptance tests")
+	}
+
+	if testSSEClientFactory == nil {
+		var err error
+		testSSEClientFactory, err = client.NewSSEClientFactory(keyId, keySecret, "")
+		require.NoError(t, err, "failed to create SSEClientFactory")
 	}
 
 	return testSSEClientFactory

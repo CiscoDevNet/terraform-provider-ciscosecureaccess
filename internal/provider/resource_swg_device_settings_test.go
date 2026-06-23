@@ -18,8 +18,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
-	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
 func newSWGInner(originID int64, value string) swg.ListSWGDeviceSettingsInner {
@@ -163,9 +163,13 @@ func TestSWGDeviceSettingsResource_basic(t *testing.T) {
 
 func testAccCheckSWGDeviceSettingsDestroy(s *terraform.State) error {
 	ctx := context.Background()
-	factory := &client.SSEClientFactory{
-		KeyId:     os.Getenv("CISCOSECUREACCESS_KEY_ID"),
-		KeySecret: os.Getenv("CISCOSECUREACCESS_KEY_SECRET"),
+	factory, err := client.NewSSEClientFactory(
+		os.Getenv("CISCOSECUREACCESS_KEY_ID"),
+		os.Getenv("CISCOSECUREACCESS_KEY_SECRET"),
+		"",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create SSEClientFactory: %w", err)
 	}
 	c := factory.GetSwgClient(ctx)
 	for _, rs := range s.RootModule().Resources {

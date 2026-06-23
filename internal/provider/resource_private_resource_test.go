@@ -664,9 +664,13 @@ resource "ciscosecureaccess_private_resource" "test_resource" {
 
 func testAccCheckPrivateResourceDestroy(s *terraform.State) error {
 	ctx := context.Background()
-	factory := &client.SSEClientFactory{
-		KeyId:     os.Getenv("CISCOSECUREACCESS_KEY_ID"),
-		KeySecret: os.Getenv("CISCOSECUREACCESS_KEY_SECRET"),
+	factory, err := client.NewSSEClientFactory(
+		os.Getenv("CISCOSECUREACCESS_KEY_ID"),
+		os.Getenv("CISCOSECUREACCESS_KEY_SECRET"),
+		"",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create SSEClientFactory: %w", err)
 	}
 	c := factory.GetPrivateAppsClient(ctx)
 	for _, rs := range s.RootModule().Resources {

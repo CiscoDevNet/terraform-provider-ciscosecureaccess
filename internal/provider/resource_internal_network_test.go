@@ -17,8 +17,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
-	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
 // Test constants for internal network resource tests
@@ -35,7 +35,6 @@ func generateInternalNetworkTestName(suffix string) string {
 	return fmt.Sprintf("%s%s-%s", testInternalNetworkNamePrefix, acctest.RandStringFromCharSet(8, acctest.CharSetAlphaNum), suffix)
 }
 
-func ptrInt64(v int64) *int64    { return &v }
 func ptrString(v string) *string { return &v }
 
 func TestFlattenInternalNetworkObject_SiteIdSet(t *testing.T) {
@@ -255,9 +254,13 @@ resource "ciscosecureaccess_internal_network" "test_resource" {
 
 func testAccCheckInternalNetworkDestroy(s *terraform.State) error {
 	ctx := context.Background()
-	factory := &client.SSEClientFactory{
-		KeyId:     os.Getenv("CISCOSECUREACCESS_KEY_ID"),
-		KeySecret: os.Getenv("CISCOSECUREACCESS_KEY_SECRET"),
+	factory, err := client.NewSSEClientFactory(
+		os.Getenv("CISCOSECUREACCESS_KEY_ID"),
+		os.Getenv("CISCOSECUREACCESS_KEY_SECRET"),
+		"",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create SSEClientFactory: %w", err)
 	}
 	c := factory.GetInternalNetworksClient(ctx)
 	for _, rs := range s.RootModule().Resources {

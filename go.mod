@@ -73,3 +73,6 @@ require (
 	gopkg.in/validator.v2 v2.0.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// TODO: Remove before release - publish SDK to module proxy first
+replace github.com/CiscoDevNet/go-ciscosecureaccess => ../go-ciscosecureaccess

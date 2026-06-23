@@ -5,9 +5,11 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
@@ -147,6 +149,46 @@ func TestAccessPolicy_blockAction(t *testing.T) {
 			},
 		})
 	}, minWaitTime)
+}
+
+func TestFormatPutAccessPolicyRequestIncludesMutableFields(t *testing.T) {
+	ctx := context.Background()
+	model := accessPolicyResourceModel{
+		Name:                    types.StringValue("tfAccPayloadTest"),
+		Action:                  types.StringValue("allow"),
+		Description:             types.StringValue("updated description"),
+		Enabled:                 types.BoolValue(false),
+		LogLevel:                types.StringValue("LOG_ALL"),
+		Priority:                types.Int64Value(123),
+		PrivateResourceIds:      types.SetNull(types.Int64Type),
+		DestinationListIds:      types.SetNull(types.Int64Type),
+		ContentCategoryListIds:  types.SetNull(types.Int64Type),
+		SourceIds:               types.SetNull(types.Int64Type),
+		SourceTypes:             mustStringSet(t, ctx, NETWORKS),
+		PrivateDestinationTypes: mustStringSet(t, ctx, PRIVATE_APPS_SCHEMA),
+		PublicDestinationTypes:  types.SetNull(types.StringType),
+		TrafficType:             types.StringValue("PRIVATE_NETWORK"),
+	}
+
+	payload := formatPutAccessPolicyRequest(ctx, &model)
+	if payload.RuleIsEnabled == nil || *payload.RuleIsEnabled {
+		t.Fatalf("expected PUT payload to include ruleIsEnabled=false, got %#v", payload.RuleIsEnabled)
+	}
+	if payload.RuleDescription == nil || *payload.RuleDescription != "updated description" {
+		t.Fatalf("expected PUT payload to include ruleDescription, got %#v", payload.RuleDescription)
+	}
+	if payload.RulePriority != 123 {
+		t.Fatalf("expected PUT payload priority 123, got %d", payload.RulePriority)
+	}
+}
+
+func mustStringSet(t *testing.T, ctx context.Context, values ...string) types.Set {
+	t.Helper()
+	set, diags := types.SetValueFrom(ctx, types.StringType, values)
+	if diags.HasError() {
+		t.Fatalf("building test set failed: %v", diags)
+	}
+	return set
 }
 
 // Configuration generators for different test scenarios

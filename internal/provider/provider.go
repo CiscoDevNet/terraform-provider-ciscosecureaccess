@@ -147,17 +147,12 @@ func (p *ciscosecureaccessProvider) Configure(ctx context.Context, req provider.
 	tflog.Debug(ctx, "Creating Cisco Secure Access client")
 
 	// Initialize client factory
-	p.clientFactory = &client.SSEClientFactory{
-		KeyId:       keyID,
-		KeySecret:   keySecret,
-		ApiEndpoint: apiEndpoint,
-	}
-
-	// Ensure clientFactory is not nil after initialization
-	if p.clientFactory == nil {
+	var factoryErr error
+	p.clientFactory, factoryErr = client.NewSSEClientFactory(keyID, keySecret, apiEndpoint)
+	if factoryErr != nil {
 		resp.Diagnostics.AddError(
 			"Client Initialization Error",
-			"Failed to initialize Cisco Secure Access client factory. Please check your configuration.",
+			"Failed to initialize Cisco Secure Access client factory: "+factoryErr.Error(),
 		)
 		return
 	}
@@ -196,6 +191,8 @@ func (p *ciscosecureaccessProvider) DataSources(_ context.Context) []func() data
 		NewIdentityDataSource,
 		NewGroupDataSource,
 		NewContentCategoryListDataSource,
+		NewZtnaProfilesDataSource,
+		NewZtnaTrustedNetworksDataSource,
 	}
 }
 
@@ -211,6 +208,17 @@ func (p *ciscosecureaccessProvider) Resources(_ context.Context) []func() resour
 		NewGlobalSettingsResource,
 		NewPrivateResourceResource,
 		NewResourceConnectorAgentResource,
+		NewConnectorGroupResourceMappingsResource,
 		NewSiteResource,
+		NewZtnaProfileResource,
+		NewZtnaTrustedNetworkResource,
+		NewZtnaProfilePrivateResourceMappingsResource,
+		NewZtnaProfileUserMappingsResource,
+		NewZtnaProfileGroupMappingsResource,
+		NewZtnaProfilePrivateSteeringTrustedNetworksResource,
+		NewZtnaProfileInternetSteeringTrustedNetworksResource,
+		NewZtnaProfileInternetSteeringDestinationListsResource,
+		NewZtnaProfileInternetSteeringExclusionsResource,
+		NewZtnaPrivateSteeringDestinationResource,
 	}
 }

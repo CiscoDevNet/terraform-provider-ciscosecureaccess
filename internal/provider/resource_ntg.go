@@ -8,8 +8,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
@@ -215,15 +218,20 @@ func (r *networkTunnelGroupResource) Create(ctx context.Context, req resource.Cr
 	}
 	addNetworkTunnelGroupRequest.SetDeviceType(*deviceType)
 
-	createResp, _, err := r.client.NetworkTunnelGroupsAPI.AddNetworkTunnelGroup(ctx).AddNetworkTunnelGroupRequest(addNetworkTunnelGroupRequest).Execute()
+	createResp, httpResp, err := r.client.NetworkTunnelGroupsAPI.AddNetworkTunnelGroup(ctx).AddNetworkTunnelGroupRequest(addNetworkTunnelGroupRequest).Execute()
 	if err != nil {
+		if httpResp != nil && httpResp.StatusCode == http.StatusConflict {
+			tflog.Info(ctx, "Network tunnel group already exists (409), adopting existing resource", map[string]interface{}{"name": name})
+			r.adoptExistingTunnel(ctx, name, &plan, resp)
+			return
+		}
 		resp.Diagnostics.AddError(
 			"Error creating network tunnel group",
 			fmt.Sprintf("Failed to create network tunnel group '%s': %v", name, err),
 		)
 		return
 	}
-	
+
 	tflog.Debug(ctx, "Created network tunnel group", map[string]interface{}{
 		"id":   createResp.GetId(),
 		"name": name,
@@ -233,6 +241,10 @@ func (r *networkTunnelGroupResource) Create(ctx context.Context, req resource.Cr
 	// Convert API hubs to terraform models
 	var hubs []hubModel
 	for _, hub := range createResp.Hubs {
+		if hub.Id == nil || hub.AuthId == nil || hub.IsPrimary == nil || hub.Datacenter == nil || hub.Datacenter.Name == nil || hub.Datacenter.Ip == nil {
+			resp.Diagnostics.AddError("Unexpected API Response", "Hub data is incomplete in the API response")
+			return
+		}
 		dc := datacenterModel{
 			Name: types.StringValue(*hub.Datacenter.Name),
 			IP:   types.StringValue(*hub.Datacenter.Ip),
@@ -259,6 +271,134 @@ func (r *networkTunnelGroupResource) Create(ctx context.Context, req resource.Cr
 		return
 	}
 
+}
+
+func (r *networkTunnelGroupResource) adoptExistingTunnel(ctx context.Context, name string, plan *ntgResourceModel, resp *resource.CreateResponse) {
+	tunnelId, searched, err := r.findExistingTunnelByName(ctx, name)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Error adopting existing network tunnel group",
+			fmt.Sprintf("Tunnel '%s' returned 409 but could not be found via List API: %v", name, err),
+		)
+		return
+	}
+	if tunnelId == 0 {
+		resp.Diagnostics.AddError(
+			"Error adopting existing network tunnel group",
+			fmt.Sprintf("Tunnel '%s' returned 409 but no exact name match found in %d List API results", name, searched),
+		)
+		return
+	}
+	tflog.Info(ctx, "Found existing tunnel, reading full details", map[string]interface{}{"id": tunnelId, "name": name})
+
+	readResp, _, readErr := r.client.NetworkTunnelGroupsAPI.GetNetworkTunnelGroup(ctx, tunnelId).Execute()
+	if readErr != nil {
+		resp.Diagnostics.AddError(
+			"Error reading adopted network tunnel group",
+			fmt.Sprintf("Could not read tunnel group ID %d: %v", tunnelId, readErr),
+		)
+		return
+	}
+
+	if readResp.Name == nil || readResp.Region == nil || readResp.DeviceType == nil {
+		resp.Diagnostics.AddError("Unexpected API Response", "Core fields (name, region, device_type) are nil in the API response")
+		return
+	}
+	if readResp.Routing == nil || readResp.Routing.Data.StaticDataResponseObj == nil {
+		resp.Diagnostics.AddError("Unexpected API Response", "Routing data is nil in the API response")
+		return
+	}
+
+	plan.Id = types.Int64Value(tunnelId)
+	plan.Name = types.StringValue(*readResp.Name)
+	plan.Region = types.StringValue(*readResp.Region)
+	plan.NetworkCidrs = convertStringsToNetworkCidrs(readResp.Routing.Data.StaticDataResponseObj.NetworkCIDRs)
+	plan.DeviceType = types.StringValue(string(*readResp.DeviceType))
+
+	var hubs []hubModel
+	for _, hub := range readResp.Hubs {
+		if hub.Id == nil || hub.AuthId == nil || hub.IsPrimary == nil || hub.Datacenter == nil || hub.Datacenter.Name == nil || hub.Datacenter.Ip == nil {
+			resp.Diagnostics.AddError("Unexpected API Response", "Hub data is incomplete in the API response")
+			return
+		}
+		dc := datacenterModel{
+			Name: types.StringValue(*hub.Datacenter.Name),
+			IP:   types.StringValue(*hub.Datacenter.Ip),
+		}
+		hubInstance := hubModel{
+			Id:         types.Int64Value(*hub.Id),
+			Datacenter: dc,
+			AuthID:     types.StringValue(*hub.AuthId),
+			IsPrimary:  types.BoolValue(*hub.IsPrimary),
+		}
+		hubs = append(hubs, hubInstance)
+	}
+
+	var diags diag.Diagnostics
+	plan.Hubs, diags = types.ListValueFrom(ctx, types.ObjectType{AttrTypes: hubModel{}.AttrTypes()}, hubs)
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+}
+
+const (
+	networkTunnelGroupAdoptionPageLimit = int64(100)
+	networkTunnelGroupAdoptionMaxPages  = 1000
+)
+
+func (r *networkTunnelGroupResource) findExistingTunnelByName(ctx context.Context, name string) (int64, int, error) {
+	var offset int64
+	searched := 0
+
+	for page := 0; page < networkTunnelGroupAdoptionMaxPages; page++ {
+		listResp, _, err := r.client.NetworkTunnelGroupsAPI.ListNetworkTunnelGroups(ctx).
+			Offset(offset).
+			Limit(networkTunnelGroupAdoptionPageLimit).
+			Execute()
+		if err != nil {
+			return 0, searched, fmt.Errorf("list network tunnel groups at offset %d: %w", offset, err)
+		}
+		if listResp == nil {
+			return 0, searched, fmt.Errorf("list network tunnel groups returned nil response at offset %d", offset)
+		}
+		if len(listResp.Data) == 0 {
+			return 0, searched, nil
+		}
+
+		for _, candidate := range listResp.Data {
+			searched++
+			candidateName := ""
+			if candidate.Name != nil {
+				candidateName = *candidate.Name
+			}
+			tflog.Debug(ctx, "Checking tunnel candidate for adoption", map[string]interface{}{
+				"candidate_name": candidateName,
+				"looking_for":    name,
+				"match":          strings.EqualFold(candidateName, name),
+			})
+			if candidate.Name == nil || !strings.EqualFold(*candidate.Name, name) {
+				continue
+			}
+			if candidate.Id == nil {
+				return 0, searched, fmt.Errorf("matched tunnel '%s' but List API response did not include an ID", name)
+			}
+			return *candidate.Id, searched, nil
+		}
+
+		nextOffset := offset + int64(len(listResp.Data))
+		if listResp.HasTotal() && nextOffset >= listResp.GetTotal() {
+			return 0, searched, nil
+		}
+		if nextOffset <= offset {
+			return 0, searched, fmt.Errorf("list network tunnel groups pagination did not advance from offset %d", offset)
+		}
+		offset = nextOffset
+	}
+
+	return 0, searched, fmt.Errorf("searched %d pages without finding tunnel '%s'", networkTunnelGroupAdoptionMaxPages, name)
 }
 
 func (r *networkTunnelGroupResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -296,6 +436,15 @@ func (r *networkTunnelGroupResource) Read(ctx context.Context, req resource.Read
 		return
 	}
 
+	if readResp.Name == nil || readResp.Region == nil || readResp.DeviceType == nil {
+		resp.Diagnostics.AddError("Unexpected API Response", "Core fields (name, region, device_type) are nil in the API response")
+		return
+	}
+	if readResp.Routing == nil || readResp.Routing.Data.StaticDataResponseObj == nil {
+		resp.Diagnostics.AddError("Unexpected API Response", "Routing data is nil in the API response")
+		return
+	}
+
 	state.Name = types.StringValue(*readResp.Name)
 	state.Region = types.StringValue(*readResp.Region)
 	state.NetworkCidrs = convertStringsToNetworkCidrs(readResp.Routing.Data.StaticDataResponseObj.NetworkCIDRs)
@@ -304,6 +453,10 @@ func (r *networkTunnelGroupResource) Read(ctx context.Context, req resource.Read
 	// Convert API hubs to terraform models
 	var hubs []hubModel
 	for _, hub := range readResp.Hubs {
+		if hub.Id == nil || hub.AuthId == nil || hub.IsPrimary == nil || hub.Datacenter == nil || hub.Datacenter.Name == nil || hub.Datacenter.Ip == nil {
+			resp.Diagnostics.AddError("Unexpected API Response", "Hub data is incomplete in the API response")
+			return
+		}
 		dc := datacenterModel{
 			Name: types.StringValue(*hub.Datacenter.Name),
 			IP:   types.StringValue(*hub.Datacenter.Ip),
@@ -335,17 +488,13 @@ func compareStringSlicesAsSets(a []basetypes.StringValue, b []basetypes.StringVa
 	if len(a) != len(b) {
 		return false
 	}
-	
-	// Check if every element in 'a' exists in 'b'
-	for _, test := range a {
-		found := false
-		for _, compare := range b {
-			if test.Equal(compare) {
-				found = true
-				break
-			}
-		}
-		if !found {
+	set := make(map[string]int, len(a))
+	for _, v := range a {
+		set[v.ValueString()]++
+	}
+	for _, v := range b {
+		set[v.ValueString()]--
+		if set[v.ValueString()] < 0 {
 			return false
 		}
 	}
@@ -375,7 +524,7 @@ func convertStringsToNetworkCidrs(cidrs []string) []basetypes.StringValue {
 // Update updates the resource and sets the updated Terraform state on success.
 func (r *networkTunnelGroupResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	tflog.Info(ctx, "Updating Network Tunnel Group")
-	
+
 	// Retrieve values from plan and state
 	var plan, state ntgResourceModel
 	diags := req.Plan.Get(ctx, &plan)
@@ -383,7 +532,7 @@ func (r *networkTunnelGroupResource) Update(ctx context.Context, req resource.Up
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	
+
 	diags = req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -399,14 +548,14 @@ func (r *networkTunnelGroupResource) Update(ctx context.Context, req resource.Up
 		valueField := ntg.StringAsPatchNetworkTunnelGroupRequestInnerValue(&name)
 		patchInners = append(patchInners, *ntg.NewPatchNetworkTunnelGroupRequestInner("replace", "/name", valueField))
 	}
-	
+
 	// Check for preshared key changes
 	if !plan.PresharedKey.Equal(state.PresharedKey) {
 		key := plan.PresharedKey.ValueString()
 		keyField := ntg.StringAsPatchNetworkTunnelGroupRequestInnerValue(&key)
 		patchInners = append(patchInners, *ntg.NewPatchNetworkTunnelGroupRequestInner("replace", "/passphrase", keyField))
 	}
-	
+
 	// Check for network CIDR changes
 	if !compareStringSlicesAsSets(state.NetworkCidrs, plan.NetworkCidrs) {
 		routeList := convertNetworkCidrsToStrings(plan.NetworkCidrs)
@@ -430,12 +579,12 @@ func (r *networkTunnelGroupResource) Update(ctx context.Context, req resource.Up
 			)
 			return
 		}
-		
+
 		tflog.Debug(ctx, "Updated network tunnel group", map[string]interface{}{
 			"id":      tunnelId,
 			"changes": len(patchInners),
 		})
-		
+
 		// Log the response for debugging
 		if updateResp != nil {
 			updateString, _ := json.Marshal(updateResp)
@@ -443,10 +592,57 @@ func (r *networkTunnelGroupResource) Update(ctx context.Context, req resource.Up
 		}
 	}
 
-	// Update the state with planned values
-	state.Name = plan.Name
-	state.NetworkCidrs = plan.NetworkCidrs
+	// Refresh full state from API to pick up server-assigned fields (e.g. hubs)
+	refreshResp, _, refreshErr := r.client.NetworkTunnelGroupsAPI.GetNetworkTunnelGroup(ctx, tunnelId).Execute()
+	if refreshErr != nil {
+		resp.Diagnostics.AddError(
+			"Error refreshing network tunnel group after update",
+			fmt.Sprintf("Could not read tunnel group ID %d after update: %s", tunnelId, refreshErr.Error()),
+		)
+		return
+	}
+
+	if refreshResp.Name == nil || refreshResp.Region == nil || refreshResp.DeviceType == nil {
+		resp.Diagnostics.AddError("Unexpected API Response", "Core fields (name, region, device_type) are nil in the API response")
+		return
+	}
+	if refreshResp.Routing == nil || refreshResp.Routing.Data.StaticDataResponseObj == nil {
+		resp.Diagnostics.AddError("Unexpected API Response", "Routing data is nil in the API response")
+		return
+	}
+
+	state.Name = types.StringValue(*refreshResp.Name)
+	state.Region = types.StringValue(*refreshResp.Region)
+	state.NetworkCidrs = convertStringsToNetworkCidrs(refreshResp.Routing.Data.StaticDataResponseObj.NetworkCIDRs)
+	state.DeviceType = types.StringValue(string(*refreshResp.DeviceType))
+	// Preserve the preshared key from plan since the API does not return it
 	state.PresharedKey = plan.PresharedKey
+
+	var refreshHubs []hubModel
+	for _, hub := range refreshResp.Hubs {
+		if hub.Id == nil || hub.AuthId == nil || hub.IsPrimary == nil || hub.Datacenter == nil || hub.Datacenter.Name == nil || hub.Datacenter.Ip == nil {
+			resp.Diagnostics.AddError("Unexpected API Response", "Hub data is incomplete in the API response")
+			return
+		}
+		dc := datacenterModel{
+			Name: types.StringValue(*hub.Datacenter.Name),
+			IP:   types.StringValue(*hub.Datacenter.Ip),
+		}
+		refreshHubs = append(refreshHubs, hubModel{
+			Id:         types.Int64Value(*hub.Id),
+			Datacenter: dc,
+			AuthID:     types.StringValue(*hub.AuthId),
+			IsPrimary:  types.BoolValue(*hub.IsPrimary),
+		})
+	}
+
+	var hubDiags diag.Diagnostics
+	state.Hubs, hubDiags = types.ListValueFrom(ctx, types.ObjectType{AttrTypes: hubModel{}.AttrTypes()}, refreshHubs)
+	if hubDiags.HasError() {
+		resp.Diagnostics.Append(hubDiags...)
+		return
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 
 }

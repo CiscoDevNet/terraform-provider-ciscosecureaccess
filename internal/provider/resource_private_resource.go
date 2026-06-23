@@ -958,7 +958,11 @@ func (r *privateResourceResource) processReadAddresses(ctx context.Context, apiA
 		}
 
 		var addressUpdate addressTypesModel
-		addressUpdate.Addresses, _ = types.SetValueFrom(ctx, types.StringType, resourceAddress.DestinationAddr)
+		var addrDiags diag.Diagnostics
+		addressUpdate.Addresses, addrDiags = types.SetValueFrom(ctx, types.StringType, resourceAddress.DestinationAddr)
+		if addrDiags.HasError() {
+			return nil, addrDiags
+		}
 		addressUpdate.TrafficSelector, diags = types.SetValueFrom(ctx, types.ObjectType{AttrTypes: trafficSelectorModel{}.AttrTypes()}, protocolPortsInner)
 		if diags.HasError() {
 			return nil, diags
@@ -1097,9 +1101,12 @@ func (r *privateResourceResource) Update(ctx context.Context, req resource.Updat
 		}
 	} else {
 		tflog.Debug(ctx, "No changes detected, skipping update")
+		// Write current server-truth state, not plan, to avoid drift
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+		return
 	}
 
-	// Set state to fully populated data
+	// Set state to fully populated data (read-back already populated plan via readPrivateResourceIntoState)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 

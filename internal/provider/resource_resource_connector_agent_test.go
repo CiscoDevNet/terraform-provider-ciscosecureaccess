@@ -15,8 +15,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
-	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
 // Test constants for resource connector agent tests
@@ -39,7 +39,7 @@ func TestResourceConnectorAgentResource_instanceID(t *testing.T) {
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
-			CheckDestroy: testAccCheckResourceConnectorAgentDestroy,
+			CheckDestroy:             testAccCheckResourceConnectorAgentDestroy,
 			Steps: []resource.TestStep{
 				{
 					Config: testAccResourceConnectorAgentConfigInstanceID(rName, rName),
@@ -65,7 +65,7 @@ func TestResourceConnectorAgentResource_hostname(t *testing.T) {
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
-			CheckDestroy: testAccCheckResourceConnectorAgentDestroy,
+			CheckDestroy:             testAccCheckResourceConnectorAgentDestroy,
 			Steps: []resource.TestStep{
 				{
 					Config: testAccResourceConnectorAgentConfigHostname(rName, rName),
@@ -91,7 +91,7 @@ func TestResourceConnectorAgentResource_enabled(t *testing.T) {
 		resource.Test(t, resource.TestCase{
 			PreCheck:                 func() { testAccPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
-			CheckDestroy: testAccCheckResourceConnectorAgentDestroy,
+			CheckDestroy:             testAccCheckResourceConnectorAgentDestroy,
 			Steps: []resource.TestStep{
 				{
 					Config: testAccResourceConnectorAgentConfigEnabled(rName, rName, true),
@@ -174,9 +174,13 @@ resource "ciscosecureaccess_resource_connector_agent" "test_agent" {
 
 func testAccCheckResourceConnectorAgentDestroy(s *terraform.State) error {
 	ctx := context.Background()
-	factory := &client.SSEClientFactory{
-		KeyId:     os.Getenv("CISCOSECUREACCESS_KEY_ID"),
-		KeySecret: os.Getenv("CISCOSECUREACCESS_KEY_SECRET"),
+	factory, err := client.NewSSEClientFactory(
+		os.Getenv("CISCOSECUREACCESS_KEY_ID"),
+		os.Getenv("CISCOSECUREACCESS_KEY_SECRET"),
+		"",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create SSEClientFactory: %w", err)
 	}
 	c := factory.GetResConnClient(ctx)
 	for _, rs := range s.RootModule().Resources {

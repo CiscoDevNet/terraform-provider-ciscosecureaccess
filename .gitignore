@@ -7,5 +7,8 @@ vendor
 .vscode
 terraform/
 vendor/
+# Build output
+terraform-provider-ciscosecureaccess
+
 # Added by goreleaser init:
 dist/
