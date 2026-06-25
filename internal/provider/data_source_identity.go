@@ -57,8 +57,9 @@ func (m IdentityModel) AttrTypes() map[string]attr.Type {
 
 // identityDataSourceModel maps the data source schema data.
 type identityDataSourceModel struct {
-	Identities types.List   `tfsdk:"identities"`
-	Filter     types.String `tfsdk:"filter"`
+	Identities    types.List   `tfsdk:"identities"`
+	Filter        types.String `tfsdk:"filter"`
+	IdentityType  types.String `tfsdk:"identity_type"`
 }
 
 // Metadata returns the data source type name.
@@ -89,6 +90,10 @@ func (d *identityDataSource) Schema(ctx context.Context, req datasource.SchemaRe
 			"filter": schema.StringAttribute{
 				Description: "Filter string used to search for identities",
 				Required:    true,
+			},
+			"identity_type": schema.StringAttribute{
+				Description: "Type of identity to search for: directory_user or directory_group (default: directory_user)",
+				Optional:    true,
 			},
 			"identities": schema.ListNestedAttribute{
 				Description: "List of Cisco Secure Access identities corresponding to filter",
@@ -124,12 +129,18 @@ func (d *identityDataSource) Read(ctx context.Context, req datasource.ReadReques
 		return
 	}
 
+	idType := identityTypeUser
+	if !data.IdentityType.IsNull() && !data.IdentityType.IsUnknown() && data.IdentityType.ValueString() != "" {
+		idType = data.IdentityType.ValueString()
+	}
+
 	tflog.Info(ctx, "Reading identities", map[string]interface{}{
-		"filter": data.Filter.ValueString(),
+		"filter":       data.Filter.ValueString(),
+		"identityType": idType,
 	})
 
 	// Get identities using the shared function
-	identities, getDiag := getIdentitiesForFilter(ctx, &d.client, data.Filter.ValueString(), identityTypeUser)
+	identities, getDiag := getIdentitiesForFilter(ctx, &d.client, data.Filter.ValueString(), idType)
 	if getDiag.HasError() {
 		resp.Diagnostics.Append(getDiag...)
 		return
@@ -138,6 +149,11 @@ func (d *identityDataSource) Read(ctx context.Context, req datasource.ReadReques
 	tflog.Debug(ctx, "Retrieved identities", map[string]interface{}{
 		"count": len(identities),
 	})
+
+	// Ensure non-nil slice so Terraform gets an empty list, not null
+	if identities == nil {
+		identities = []IdentityModel{}
+	}
 
 	// Convert to Terraform list
 	identitiesList, diags := types.ListValueFrom(ctx, types.ObjectType{AttrTypes: IdentityModel{}.AttrTypes()}, identities)

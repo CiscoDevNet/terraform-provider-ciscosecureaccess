@@ -193,6 +193,8 @@ func (p *ciscosecureaccessProvider) DataSources(_ context.Context) []func() data
 		NewContentCategoryListDataSource,
 		NewZtnaProfilesDataSource,
 		NewZtnaTrustedNetworksDataSource,
+		NewRavpnHeadendsDataSource,
+		NewRavpnProfilesDataSource,
 	}
 }
 
@@ -220,5 +222,9 @@ func (p *ciscosecureaccessProvider) Resources(_ context.Context) []func() resour
 		NewZtnaProfileInternetSteeringDestinationListsResource,
 		NewZtnaProfileInternetSteeringExclusionsResource,
 		NewZtnaPrivateSteeringDestinationResource,
+		NewRavpnDnsServerResource,
+		NewRavpnHeadendResource,
+		NewRavpnProfileResource,
+		NewRoamingDeviceResource,
 	}
 }

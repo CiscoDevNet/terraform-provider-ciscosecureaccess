@@ -22,6 +22,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -142,10 +144,6 @@ func (r *ztnaProfileResource) Schema(_ context.Context, _ resource.SchemaRequest
 		"duration_minutes": schema.Int64Attribute{
 			Description: "Duration in minutes for the enforcement pause.",
 			Optional:    true,
-			Computed:    true,
-			PlanModifiers: []planmodifier.Int64{
-				int64planmodifier.UseStateForUnknown(),
-			},
 		},
 	}
 
@@ -194,6 +192,9 @@ func (r *ztnaProfileResource) Schema(_ context.Context, _ resource.SchemaRequest
 				Description: "Secure private access configuration.",
 				Optional:    true,
 				Computed:    true,
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.UseStateForUnknown(),
+				},
 				Attributes: map[string]schema.Attribute{
 					"trusted_networks_enabled": schema.BoolAttribute{
 						Description: "Whether trusted networks are enabled for private access.",
@@ -207,13 +208,19 @@ func (r *ztnaProfileResource) Schema(_ context.Context, _ resource.SchemaRequest
 						Description: "Enforcement pause configuration.",
 						Optional:    true,
 						Computed:    true,
-						Attributes:  enforcePauseAttrs,
+						PlanModifiers: []planmodifier.Object{
+							objectplanmodifier.UseStateForUnknown(),
+						},
+						Attributes: enforcePauseAttrs,
 					},
 					"dns_steering_destination_ids": schema.ListAttribute{
 						Description: "IDs of DNS steering destinations.",
 						Optional:    true,
 						Computed:    true,
 						ElementType: types.StringType,
+						PlanModifiers: []planmodifier.List{
+							listplanmodifier.UseStateForUnknown(),
+						},
 					},
 				},
 			},
@@ -221,6 +228,9 @@ func (r *ztnaProfileResource) Schema(_ context.Context, _ resource.SchemaRequest
 				Description: "Secure internet access configuration.",
 				Optional:    true,
 				Computed:    true,
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.UseStateForUnknown(),
+				},
 				Attributes: map[string]schema.Attribute{
 					"steering_mode": schema.Int64Attribute{
 						Description: "Internet steering mode: 0=none, 1=all traffic, 2=by destination list.",
@@ -245,7 +255,10 @@ func (r *ztnaProfileResource) Schema(_ context.Context, _ resource.SchemaRequest
 						Description: "Enforcement pause configuration.",
 						Optional:    true,
 						Computed:    true,
-						Attributes:  enforcePauseAttrs,
+						PlanModifiers: []planmodifier.Object{
+							objectplanmodifier.UseStateForUnknown(),
+						},
+						Attributes: enforcePauseAttrs,
 					},
 				},
 			},
@@ -253,47 +266,71 @@ func (r *ztnaProfileResource) Schema(_ context.Context, _ resource.SchemaRequest
 				Description: "Per-platform enable/disable toggles for this profile. All platforms are enabled by default when omitted.",
 				Optional:    true,
 				Computed:    true,
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.UseStateForUnknown(),
+				},
 				Attributes: map[string]schema.Attribute{
 					"mac_intel": schema.SingleNestedAttribute{
 						Description: "macOS (Intel) platform settings.",
 						Optional:    true,
 						Computed:    true,
-						Attributes:  osPlatformAttrs,
+						PlanModifiers: []planmodifier.Object{
+							objectplanmodifier.UseStateForUnknown(),
+						},
+						Attributes: osPlatformAttrs,
 					},
 					"win": schema.SingleNestedAttribute{
 						Description: "Windows platform settings.",
 						Optional:    true,
 						Computed:    true,
-						Attributes:  osPlatformAttrs,
+						PlanModifiers: []planmodifier.Object{
+							objectplanmodifier.UseStateForUnknown(),
+						},
+						Attributes: osPlatformAttrs,
 					},
 					"linux_64": schema.SingleNestedAttribute{
 						Description: "Linux (64-bit) platform settings.",
 						Optional:    true,
 						Computed:    true,
-						Attributes:  osPlatformAttrs,
+						PlanModifiers: []planmodifier.Object{
+							objectplanmodifier.UseStateForUnknown(),
+						},
+						Attributes: osPlatformAttrs,
 					},
 					"apple_ios": schema.SingleNestedAttribute{
 						Description: "iOS platform settings.",
 						Optional:    true,
 						Computed:    true,
-						Attributes:  osPlatformAttrs,
+						PlanModifiers: []planmodifier.Object{
+							objectplanmodifier.UseStateForUnknown(),
+						},
+						Attributes: osPlatformAttrs,
 					},
 					"android": schema.SingleNestedAttribute{
 						Description: "Android platform settings.",
 						Optional:    true,
 						Computed:    true,
+						PlanModifiers: []planmodifier.Object{
+							objectplanmodifier.UseStateForUnknown(),
+						},
 						Attributes: map[string]schema.Attribute{
 							"generic_android": schema.SingleNestedAttribute{
 								Description: "Generic Android settings.",
 								Optional:    true,
 								Computed:    true,
-								Attributes:  osPlatformAttrs,
+								PlanModifiers: []planmodifier.Object{
+									objectplanmodifier.UseStateForUnknown(),
+								},
+								Attributes: osPlatformAttrs,
 							},
 							"knox_android": schema.SingleNestedAttribute{
 								Description: "Samsung Knox Android settings.",
 								Optional:    true,
 								Computed:    true,
-								Attributes:  osPlatformAttrs,
+								PlanModifiers: []planmodifier.Object{
+									objectplanmodifier.UseStateForUnknown(),
+								},
+								Attributes: osPlatformAttrs,
 							},
 						},
 					},
@@ -595,7 +632,11 @@ func flattenZtnaProfile(p *ztnaprofiles.ZtnaProfile, m *ztnaProfileModel) {
 		m.ProfileName = types.StringValue(*p.ProfileName)
 	}
 	if p.Priority != nil {
-		m.Priority = types.Int64Value(int64(*p.Priority))
+		if m.Priority.IsNull() || m.Priority.IsUnknown() {
+			m.Priority = types.Int64Value(int64(*p.Priority))
+		}
+		// When state already has a priority, preserve it: the API renormalizes
+		// absolute values to relative rank, causing perpetual drift otherwise.
 	}
 	if p.Rev != nil {
 		m.Rev = types.Int64Value(int64(*p.Rev))
@@ -621,9 +662,13 @@ func flattenZtnaProfile(p *ztnaprofiles.ZtnaProfile, m *ztnaProfileModel) {
 			pause := &ztnaEnforcementPauseModel{}
 			if ep.Enabled != nil {
 				pause.Enabled = types.BoolValue(*ep.Enabled)
+			} else {
+				pause.Enabled = types.BoolNull()
 			}
 			if ep.DurationMinutes != nil {
 				pause.DurationMinutes = types.Int64Value(int64(*ep.DurationMinutes))
+			} else {
+				pause.DurationMinutes = types.Int64Null()
 			}
 			model.EnforcementPause = pause
 		}
@@ -657,9 +702,13 @@ func flattenZtnaProfile(p *ztnaprofiles.ZtnaProfile, m *ztnaProfileModel) {
 			pause := &ztnaEnforcementPauseModel{}
 			if ep.Enabled != nil {
 				pause.Enabled = types.BoolValue(*ep.Enabled)
+			} else {
+				pause.Enabled = types.BoolNull()
 			}
 			if ep.DurationMinutes != nil {
 				pause.DurationMinutes = types.Int64Value(int64(*ep.DurationMinutes))
+			} else {
+				pause.DurationMinutes = types.Int64Null()
 			}
 			model.EnforcementPause = pause
 		}

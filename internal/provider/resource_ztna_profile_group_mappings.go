@@ -104,10 +104,39 @@ func (r *ztnaProfileGroupMappingsResource) Read(ctx context.Context, req resourc
 		resp.Diagnostics.AddError("Error reading group mappings", err.Error())
 		return
 	}
-	ids := make([]types.String, len(current.Items))
-	for i, item := range current.Items {
+
+	liveSet := make(map[string]struct{}, len(current.Items))
+	for _, item := range current.Items {
 		if item.Id != nil {
-			ids[i] = types.StringValue(*item.Id)
+			liveSet[*item.Id] = struct{}{}
+		}
+	}
+
+	stateSet := make(map[string]struct{}, len(state.GroupIds))
+	for _, id := range state.GroupIds {
+		if !id.IsNull() && !id.IsUnknown() {
+			stateSet[id.ValueString()] = struct{}{}
+		}
+	}
+
+	if len(liveSet) == len(stateSet) {
+		same := true
+		for id := range liveSet {
+			if _, exists := stateSet[id]; !exists {
+				same = false
+				break
+			}
+		}
+		if same {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+			return
+		}
+	}
+
+	ids := make([]types.String, 0, len(current.Items))
+	for _, item := range current.Items {
+		if item.Id != nil {
+			ids = append(ids, types.StringValue(*item.Id))
 		}
 	}
 	state.GroupIds = ids
