@@ -357,9 +357,31 @@ func buildInternalDomainRequest(ctx context.Context, plan internalDomainResource
 func setInternalDomainState(ctx context.Context, internalDomain *internaldomains.InternalDomainObject, state *internalDomainResourceModel, addError func(string, string)) {
 	state.Id = types.Int64Value(internalDomain.GetId())
 	state.Domain = types.StringValue(internalDomain.GetDomain())
-	state.Description = types.StringValue(internalDomain.GetDescription())
-	state.IncludeAllVAs = types.BoolValue(internalDomain.GetIncludeAllVAs())
-	state.IncludeAllMobileDevices = types.BoolValue(internalDomain.GetIncludeAllMobileDevices())
+
+	// description: only store when non-empty. If the API returns "" and the user
+	// never configured it, keep state null to prevent buildInternalDomainRequest
+	// from sending description:"" on unrelated updates (API rejects length < 1).
+	if v := internalDomain.GetDescription(); v != "" {
+		state.Description = types.StringValue(v)
+	} else if state.Description.IsUnknown() {
+		state.Description = types.StringNull()
+	}
+
+	// include_all_vas: only store when true, or when the user already configured it.
+	// Prevents a null optional from becoming computed false and leaking into updates.
+	if v := internalDomain.GetIncludeAllVAs(); v {
+		state.IncludeAllVAs = types.BoolValue(true)
+	} else if state.IncludeAllVAs.IsUnknown() {
+		state.IncludeAllVAs = types.BoolNull()
+	}
+
+	// include_all_mobile_devices: same rationale as include_all_vas.
+	if v := internalDomain.GetIncludeAllMobileDevices(); v {
+		state.IncludeAllMobileDevices = types.BoolValue(true)
+	} else if state.IncludeAllMobileDevices.IsUnknown() {
+		state.IncludeAllMobileDevices = types.BoolNull()
+	}
+
 	state.CreatedAt = types.StringValue(formatInternalDomainTime(internalDomain.GetCreatedAt()))
 	state.ModifiedAt = types.StringValue(formatInternalDomainTime(internalDomain.GetModifiedAt()))
 
