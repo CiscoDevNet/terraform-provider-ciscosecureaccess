@@ -16,7 +16,7 @@ Cisco Secure Access Network resource
 
 - `is_dynamic` (Boolean) Whether or not the network has a dynamic IP address
 - `name` (String) Name of network
-- `prefix_length` (Number) Prefix length of network
+- `prefix_length` (Number) Prefix length of network. Must be greater than 28 and less than 33 (i.e. /29, /30, /31, or /32)
 - `status` (String) Status of network, must be OPEN or CLOSED
 
 ### Optional

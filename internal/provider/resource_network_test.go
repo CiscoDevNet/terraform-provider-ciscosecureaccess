@@ -23,7 +23,7 @@ import (
 
 func TestUpdateNetworkModelFromObject_AllFieldsSet(t *testing.T) {
 	createdAt := time.Date(2025, 5, 23, 12, 34, 56, 0, time.UTC)
-	obj := networks.NewNetworkObject(12345, "corporate-network", "10.0.0.0", 8, false, true, "OPEN", createdAt)
+	obj := networks.NewNetworkObject(12345, "corporate-network", "10.0.0.0", 29, false, true, "OPEN", createdAt)
 
 	model := &networkResourceModel{}
 	updateNetworkModelFromObject(model, obj)
@@ -37,8 +37,8 @@ func TestUpdateNetworkModelFromObject_AllFieldsSet(t *testing.T) {
 	if got := model.IpAddress.ValueString(); got != "10.0.0.0" {
 		t.Errorf("IpAddress: expected %q, got %q", "10.0.0.0", got)
 	}
-	if got := model.PrefixLength.ValueInt64(); got != 8 {
-		t.Errorf("PrefixLength: expected 8, got %d", got)
+	if got := model.PrefixLength.ValueInt64(); got != 29 {
+		t.Errorf("PrefixLength: expected 29, got %d", got)
 	}
 	if got := model.IsDynamic.ValueBool(); got != false {
 		t.Errorf("IsDynamic: expected false, got %v", got)
@@ -66,7 +66,7 @@ func TestUpdateNetworkModelFromObject_StatusValues(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			obj := networks.NewNetworkObject(1, "n", "192.168.1.0", 24, tc.isDynamic, true, tc.status, time.Now())
+			obj := networks.NewNetworkObject(1, "n", "192.168.1.0", 29, tc.isDynamic, true, tc.status, time.Now())
 
 			model := &networkResourceModel{}
 			updateNetworkModelFromObject(model, obj)
@@ -85,7 +85,7 @@ const (
 	testNetworkResourceName  = "ciscosecureaccess_network.test_resource"
 	testNetworkNamePrefix    = "tfacc"
 	testNetworkIPAddress     = "198.51.100.0"
-	testNetworkPrefixLength  = int64(24)
+	testNetworkPrefixLength  = int64(29)
 	testNetworkUpdatedSuffix = "updated"
 )
 

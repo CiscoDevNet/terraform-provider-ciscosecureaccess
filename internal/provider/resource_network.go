@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
@@ -92,9 +93,12 @@ func (r *networkResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Optional:            true,
 			},
 			"prefix_length": schema.Int64Attribute{
-				Description:         "Prefix length of the network.",
-				MarkdownDescription: "Prefix length of the network.",
+				Description:         "Prefix length of the network. Must be greater than 28 and less than 33 (i.e. /29, /30, /31, or /32).",
+				MarkdownDescription: "Prefix length of the network. Must be greater than 28 and less than 33 (i.e. `/29`, `/30`, `/31`, or `/32`).",
 				Required:            true,
+				Validators: []validator.Int64{
+					int64validator.Between(29, 32),
+				},
 			},
 			"is_dynamic": schema.BoolAttribute{
 				Description:         "Whether the network has a dynamic IP address.",
@@ -279,8 +283,10 @@ func (r *networkResource) Delete(ctx context.Context, req resource.DeleteRequest
 func updateNetworkModelFromObject(model *networkResourceModel, network *networks.NetworkObject) {
 	model.Id = types.Int64Value(network.GetOriginId())
 	model.Name = types.StringValue(network.GetName())
-	if !model.IpAddress.IsNull() && !model.IpAddress.IsUnknown() {
-		model.IpAddress = types.StringValue(network.GetIpAddress())
+	if v := network.GetIpAddress(); v != "" {
+		model.IpAddress = types.StringValue(v)
+	} else if model.IpAddress.IsUnknown() {
+		model.IpAddress = types.StringNull()
 	}
 	model.PrefixLength = types.Int64Value(network.GetPrefixLength())
 	model.IsDynamic = types.BoolValue(network.GetIsDynamic())
