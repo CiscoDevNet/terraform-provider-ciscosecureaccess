@@ -44,7 +44,7 @@ func commonAccessPolicyStateChecks(resourceName, expectedName string) []stateche
 	return []statecheck.StateCheck{
 		statecheck.ExpectKnownValue(resourceName, tfjsonpath.New("name"), knownvalue.StringExact(expectedName)),
 		statecheck.ExpectKnownValue(resourceName, tfjsonpath.New("description"), knownvalue.StringExact(testAccessPolicyDescription)),
-		statecheck.ExpectKnownValue(resourceName, tfjsonpath.New("enabled"), knownvalue.Bool(true)),
+		statecheck.ExpectKnownValue(resourceName, tfjsonpath.New("enabled"), knownvalue.Bool(false)),
 		statecheck.ExpectKnownValue(resourceName, tfjsonpath.New("log_level"), knownvalue.StringExact("LOG_ALL")),
 	}
 }
@@ -54,7 +54,7 @@ func TestAccessPolicy_basic(t *testing.T) {
 		testName := generateAccessPolicyTestName("basic")
 
 		resource.Test(t, resource.TestCase{
-			PreCheck:                 func() { testAccPreCheck(t) },
+			PreCheck:                 func() { testAccMutationPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
 			Steps: []resource.TestStep{
 				{
@@ -76,7 +76,7 @@ func TestAccessPolicy_publicInternet(t *testing.T) {
 		testName := generateAccessPolicyTestName("public")
 
 		resource.Test(t, resource.TestCase{
-			PreCheck:                 func() { testAccPreCheck(t) },
+			PreCheck:                 func() { testAccMutationPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
 			Steps: []resource.TestStep{
 				{
@@ -100,7 +100,7 @@ func TestAccessPolicy_update(t *testing.T) {
 		updatedTestName := testName + "_updated"
 
 		resource.Test(t, resource.TestCase{
-			PreCheck:                 func() { testAccPreCheck(t) },
+			PreCheck:                 func() { testAccMutationPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
 			Steps: []resource.TestStep{
 				{
@@ -129,7 +129,7 @@ func TestAccessPolicy_blockAction(t *testing.T) {
 		testName := generateAccessPolicyTestName("block")
 
 		resource.Test(t, resource.TestCase{
-			PreCheck:                 func() { testAccPreCheck(t) },
+			PreCheck:                 func() { testAccMutationPreCheck(t) },
 			ProtoV6ProviderFactories: testAccCiscoSecureAccessProviderFactories,
 			Steps: []resource.TestStep{
 				{
@@ -170,7 +170,10 @@ func TestFormatPutAccessPolicyRequestIncludesMutableFields(t *testing.T) {
 		TrafficType:             types.StringValue("PRIVATE_NETWORK"),
 	}
 
-	payload := formatPutAccessPolicyRequest(ctx, &model)
+	payload, diags := formatPutAccessPolicyRequest(ctx, &model)
+	if diags.HasError() {
+		t.Fatalf("formatting PUT payload failed: %v", diags)
+	}
 	if payload.RuleIsEnabled == nil || *payload.RuleIsEnabled {
 		t.Fatalf("expected PUT payload to include ruleIsEnabled=false, got %#v", payload.RuleIsEnabled)
 	}
@@ -199,7 +202,7 @@ func testAccAccessPolicyResource(name string) string {
 resource "ciscosecureaccess_access_policy" "test_resource" {
     name = "%s"
     action = "allow"
-    enabled = true
+    enabled = false
     log_level = "LOG_ALL"
     source_types = ["networks"]
     private_destination_types = ["private_apps"]
@@ -213,7 +216,7 @@ func testAccAccessPolicyPublicInternetConfig(name string) string {
 resource "ciscosecureaccess_access_policy" "test_resource" {
     name = "%s"
     action = "allow"
-    enabled = true
+    enabled = false
     log_level = "LOG_ALL"
     source_types = ["directory_users"]
     public_destination_types = ["internet"]

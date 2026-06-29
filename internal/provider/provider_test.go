@@ -29,6 +29,19 @@ func testAccPreCheck(t *testing.T) {
 	}
 }
 
+func testAccMutationPreCheck(t *testing.T) {
+	t.Helper()
+	testAccPreCheck(t)
+
+	testOrgID := os.Getenv("CISCOSECUREACCESS_TEST_ORG_ID")
+	allowMutation := os.Getenv("CISCOSECUREACCESS_TEST_ALLOW_MUTATION")
+	if testOrgID != "8376136" || allowMutation != testOrgID {
+		t.Fatalf(
+			"mutating acceptance tests require CISCOSECUREACCESS_TEST_ORG_ID and CISCOSECUREACCESS_TEST_ALLOW_MUTATION to both equal 8376136",
+		)
+	}
+}
+
 func testClientFactory(t *testing.T) *client.SSEClientFactory {
 	t.Helper()
 

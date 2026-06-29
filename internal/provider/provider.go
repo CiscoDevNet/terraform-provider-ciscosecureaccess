@@ -188,6 +188,9 @@ func validateAndResolveConfig(ctx context.Context, config ciscosecureaccessProvi
 func (p *ciscosecureaccessProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewResourceConnectorGroupsDataSource,
+		NewApplicationDataSource,
+		NewApplicationCategoryDataSource,
+		NewWebCategoryDataSource,
 		NewIdentityDataSource,
 		NewGroupDataSource,
 		NewContentCategoryListDataSource,
@@ -202,6 +205,7 @@ func (p *ciscosecureaccessProvider) DataSources(_ context.Context) []func() data
 func (p *ciscosecureaccessProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewAccessPolicyResource,
+		NewApplicationListResource,
 		NewDestinationListResource,
 		NewInternalNetworkResource,
 		NewSWGDeviceSettingsResource,
@@ -209,6 +213,7 @@ func (p *ciscosecureaccessProvider) Resources(_ context.Context) []func() resour
 		NewNetworkTunnelGroupResource,
 		NewGlobalSettingsResource,
 		NewPrivateResourceResource,
+		NewPrivateResourceGroupResource,
 		NewResourceConnectorAgentResource,
 		NewConnectorGroupResourceMappingsResource,
 		NewSiteResource,

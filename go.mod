@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/CiscoDevNet/go-ciscosecureaccess v1.0.4
+	github.com/CiscoDevNet/go-ciscosecureaccess v1.0.5-0.20260629152735-c76fd089bf77
 	github.com/avast/retry-go/v4 v4.6.0
 	github.com/hashicorp/terraform-plugin-framework v1.13.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.16.0
@@ -73,6 +73,3 @@ require (
 	gopkg.in/validator.v2 v2.0.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// TODO: Remove before release - publish SDK to module proxy first
-replace github.com/CiscoDevNet/go-ciscosecureaccess => ../go-ciscosecureaccess
