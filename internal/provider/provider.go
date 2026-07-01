@@ -207,6 +207,7 @@ func (p *ciscosecureaccessProvider) Resources(_ context.Context) []func() resour
 		NewInternalNetworkResource,
 		NewSWGDeviceSettingsResource,
 		NewRoamingComputerResource,
+		NewNetworkResource,
 		NewNetworkTunnelGroupResource,
 		NewGlobalSettingsResource,
 		NewPrivateResourceResource,
