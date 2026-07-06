@@ -94,6 +94,9 @@ func generateNetworkTestName(suffix string) string {
 }
 
 func TestNetworkResource_basic(t *testing.T) {
+	if os.Getenv("TF_ACC_NETWORK") == "" {
+		t.Skip("TF_ACC_NETWORK not set; skipping network creation acceptance tests")
+	}
 	rateLimitedTest(t, func() {
 		name := generateNetworkTestName("basic")
 
@@ -126,6 +129,9 @@ func TestNetworkResource_basic(t *testing.T) {
 }
 
 func TestNetworkResource_update(t *testing.T) {
+	if os.Getenv("TF_ACC_NETWORK") == "" {
+		t.Skip("TF_ACC_NETWORK not set; skipping network creation acceptance tests")
+	}
 	rateLimitedTest(t, func() {
 		name := generateNetworkTestName("upd")
 		updatedName := generateNetworkTestName(testNetworkUpdatedSuffix)

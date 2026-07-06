@@ -35,9 +35,6 @@ func generateInternalNetworkTestName(suffix string) string {
 	return fmt.Sprintf("%s%s-%s", testInternalNetworkNamePrefix, acctest.RandStringFromCharSet(8, acctest.CharSetAlphaNum), suffix)
 }
 
-func ptrInt64(v int64) *int64    { return &v }
-func ptrString(v string) *string { return &v }
-
 func TestFlattenInternalNetworkObject_SiteIdSet(t *testing.T) {
 	network := &internalnetworks.InternalNetworkObject{
 		OriginId:     42,
