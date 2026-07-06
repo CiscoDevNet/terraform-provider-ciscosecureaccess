@@ -23,6 +23,10 @@ func testAccPreCheck(t *testing.T) {
 	// Code can be added here as pre-execution steps to all unit tests
 }
 
+func ptrString(v string) *string { return &v }
+func ptrInt64(v int64) *int64   { return &v }
+func ptrBool(v bool) *bool      { return &v }
+
 func testClientFactory(t *testing.T) *client.SSEClientFactory {
 	if testSSEClientFactory == nil {
 		keyId, ok := os.LookupEnv("CISCOSECUREACCESS_KEY_ID")

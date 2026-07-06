@@ -145,18 +145,14 @@ func newTestContentCategoriesClient(t *testing.T, handler http.Handler) (*conten
 	return contentcategories.NewAPIClient(cfg), server.Close
 }
 
-func ptrStr(s string) *string { return &s }
-func ptrInt64(i int64) *int64 { return &i }
-func ptrBool(b bool) *bool    { return &b }
-
 func makeCategoryPage(start, count int) []contentcategories.ContentCategorySetting {
 	out := make([]contentcategories.ContentCategorySetting, count)
 	for i := 0; i < count; i++ {
 		idx := start + i
 		out[i] = contentcategories.ContentCategorySetting{
 			Id:        ptrInt64(int64(idx)),
-			Name:      ptrStr(fmt.Sprintf("Category-%d", idx)),
-			Type:      ptrStr("standard"),
+			Name:      ptrString(fmt.Sprintf("Category-%d", idx)),
+			Type:      ptrString("standard"),
 			IsDefault: ptrBool(idx == 1),
 		}
 	}
@@ -225,9 +221,9 @@ func TestGetContentCategoryLists_paginates(t *testing.T) {
 // filter applies a case-insensitive substring match against the category name.
 func TestGetContentCategoryLists_filterCaseInsensitive(t *testing.T) {
 	categories := []contentcategories.ContentCategorySetting{
-		{Id: ptrInt64(1), Name: ptrStr("Social Media"), Type: ptrStr("standard"), IsDefault: ptrBool(false)},
-		{Id: ptrInt64(2), Name: ptrStr("Streaming Video"), Type: ptrStr("standard"), IsDefault: ptrBool(false)},
-		{Id: ptrInt64(3), Name: ptrStr("Productivity"), Type: ptrStr("standard"), IsDefault: ptrBool(true)},
+		{Id: ptrInt64(1), Name: ptrString("Social Media"), Type: ptrString("standard"), IsDefault: ptrBool(false)},
+		{Id: ptrInt64(2), Name: ptrString("Streaming Video"), Type: ptrString("standard"), IsDefault: ptrBool(false)},
+		{Id: ptrInt64(3), Name: ptrString("Productivity"), Type: ptrString("standard"), IsDefault: ptrBool(true)},
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -294,7 +290,7 @@ func TestGetContentCategoryLists_noResultsOnEmptyFirstPage(t *testing.T) {
 func TestGetContentCategoryLists_nilFieldsHandled(t *testing.T) {
 	categories := []contentcategories.ContentCategorySetting{
 		{}, // all fields nil
-		{Name: ptrStr("Has Name Only")},
+		{Name: ptrString("Has Name Only")},
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
