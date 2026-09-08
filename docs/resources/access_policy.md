@@ -20,7 +20,7 @@ resource "ciscosecureaccess_access_policy" "remote_to_pa" {
     enabled = "true"
     log_level = "LOG_ALL"
     traffic_type = "PRIVATE_NETWORK"
-    source_ids = [for s in data.ciscosecureaccess_identity.remote_identity.identities : s.label]
+    source_ids = [for s in data.ciscosecureaccess_identity.remote_identity.identities : s.id]
     private_resource_ids = [resource.ciscosecureaccess_private_resource.new_resource.id]
     description = "Test rule for terraform access policy support"
 }

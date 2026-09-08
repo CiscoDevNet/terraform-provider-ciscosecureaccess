@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
-	"github.com/CiscoDevNet/go-ciscosecureaccess/reports"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -27,7 +26,7 @@ func NewGroupDataSource() datasource.DataSource {
 
 // groupDataSource is the data source implementation.
 type groupDataSource struct {
-	client reports.APIClient
+	client *reportsIdentityClient
 }
 
 // groupModel maps the group data from the API.
@@ -68,7 +67,7 @@ func (d *groupDataSource) Configure(ctx context.Context, req datasource.Configur
 			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
 		return
 	}
-	d.client = *factory.GetReportsClient(ctx)
+	d.client = newReportsIdentityClient(factory)
 }
 
 // Schema defines the schema for the data source.
@@ -119,7 +118,7 @@ func (d *groupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	})
 
 	// Get groups using the shared function
-	groups, getDiag := getIdentitiesForFilter(ctx, &d.client, data.Filter.ValueString(), identityTypeGroup)
+	groups, getDiag := getIdentitiesForFilter(ctx, d.client, data.Filter.ValueString(), identityTypeGroup)
 	if getDiag.HasError() {
 		resp.Diagnostics.Append(getDiag...)
 		resp.Diagnostics.AddError(

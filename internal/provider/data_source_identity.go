@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
-	"github.com/CiscoDevNet/go-ciscosecureaccess/reports"
 	"github.com/avast/retry-go/v4"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -22,7 +21,7 @@ import (
 
 // Constants for identity data source
 const (
-	identityBatchSize = 100
+	identityBatchSize = 5000
 	identityTypeUser  = "directory_user"
 	identityTypeGroup = "directory_group"
 )
@@ -37,7 +36,7 @@ func NewIdentityDataSource() datasource.DataSource {
 
 // identityDataSource is the data source implementation.
 type identityDataSource struct {
-	client reports.APIClient
+	client *reportsIdentityClient
 }
 
 // IdentityModel maps the identity data from the API.
@@ -78,7 +77,7 @@ func (d *identityDataSource) Configure(ctx context.Context, req datasource.Confi
 			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
 		return
 	}
-	d.client = *factory.GetReportsClient(ctx)
+	d.client = newReportsIdentityClient(factory)
 }
 
 // Schema defines the schema for the data source.
@@ -129,7 +128,7 @@ func (d *identityDataSource) Read(ctx context.Context, req datasource.ReadReques
 	})
 
 	// Get identities using the shared function
-	identities, getDiag := getIdentitiesForFilter(ctx, &d.client, data.Filter.ValueString(), identityTypeUser)
+	identities, getDiag := getIdentitiesForFilter(ctx, d.client, data.Filter.ValueString(), identityTypeUser)
 	if getDiag.HasError() {
 		resp.Diagnostics.Append(getDiag...)
 		return
@@ -156,7 +155,7 @@ func (d *identityDataSource) Read(ctx context.Context, req datasource.ReadReques
 }
 
 // getIdentitiesForFilter retrieves identities from the API with pagination and retry logic.
-func getIdentitiesForFilter(ctx context.Context, client *reports.APIClient, filter string, identityType string) ([]IdentityModel, diag.Diagnostics) {
+func getIdentitiesForFilter(ctx context.Context, client *reportsIdentityClient, filter string, identityType string) ([]IdentityModel, diag.Diagnostics) {
 	offset := int64(0)
 	var diagnostics diag.Diagnostics
 	var identities []IdentityModel
@@ -170,12 +169,13 @@ func getIdentitiesForFilter(ctx context.Context, client *reports.APIClient, filt
 		done := false
 		err := retry.Do(
 			func() error {
-				identitiesResp, httpRes, err := client.UtilityAPI.GetIdentities(ctx).
-					Limit(identityBatchSize).
-					Offset(offset).
-					Search(fmt.Sprintf("%%%s%%", filter)).
-					Identitytypes(identityType).
-					Execute()
+				identitiesResp, httpRes, err := client.getIdentities(
+					ctx,
+					identityBatchSize,
+					offset,
+					fmt.Sprintf("%%%s%%", filter),
+					identityType,
+				)
 
 				if err != nil {
 					var httpRespDetails string

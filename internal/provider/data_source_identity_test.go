@@ -53,13 +53,15 @@ func TestIdentityDataSource_basic(t *testing.T) {
 
 // testIdentityFixture retrieves a sample identity for testing
 func testIdentityFixture(t *testing.T) (*reports.Identity, error) {
-	reportingClient := testClientFactory(t).GetReportsClient(context.Background())
+	reportingClient := newReportsIdentityClient(testClientFactory(t))
 
-	identities, httpResp, err := reportingClient.UtilityAPI.GetIdentities(context.Background()).
-		Limit(1).
-		Offset(0).
-		Identitytypes(identityTypeUser).
-		Execute()
+	identities, httpResp, err := reportingClient.getIdentities(
+		context.Background(),
+		1,
+		0,
+		"",
+		identityTypeUser,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get identities: %w", err)
 	}
