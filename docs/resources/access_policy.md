@@ -55,6 +55,7 @@ resource "ciscosecureaccess_private_resource" "new_resource" {
 - `private_resource_ids` (Set of Number) Secure Access IDs of matching private resource
 - `public_destination_types` (Set of String) Wildcard destination types allowing access to public destinations (eg. ["internet"]
 - `source_ids` (Set of Number) Source Secure Access IDs of matching resource
+- `source_all` (Boolean) Whether all source components match this access policy. Set to true instead of `source_ids` or `source_types`.
 - `source_types` (Set of String) Wildcard source types allowing access to resource (eg. ["directory_users", "networks"])
 - `traffic_type` (String) Traffic type to define rule scope ('PRIVATE_NETWORK' or 'PUBLIC_INTERNET'). Defaults to 'PRIVATE_NETWORK'
 
