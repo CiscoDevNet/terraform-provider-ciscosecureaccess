@@ -57,4 +57,7 @@ func TestSameResourceIDs(t *testing.T) {
 	if sameResourceIDs([]int64{1, 1}, []int64{1, 1}) {
 		t.Fatal("expected duplicate ID lists not to match a set")
 	}
+	if sameResourceIDs([]int64{1, 2}, []int64{1, 1}) {
+		t.Fatal("expected duplicate IDs on the right not to match a set")
+	}
 }

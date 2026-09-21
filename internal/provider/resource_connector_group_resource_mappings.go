@@ -358,11 +358,18 @@ func sameResourceIDs(left, right []int64) bool {
 	for _, id := range left {
 		leftSet[id] = struct{}{}
 	}
-	if len(leftSet) != len(right) {
+	if len(leftSet) != len(left) {
 		return false
 	}
+	rightSet := make(map[int64]struct{}, len(right))
 	for _, id := range right {
-		if _, ok := leftSet[id]; !ok {
+		rightSet[id] = struct{}{}
+	}
+	if len(rightSet) != len(right) {
+		return false
+	}
+	for id := range leftSet {
+		if _, ok := rightSet[id]; !ok {
 			return false
 		}
 	}

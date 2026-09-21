@@ -24,7 +24,7 @@ type reportsIdentityClient struct {
 	identitiesEndpoint string
 }
 
-func newReportsIdentityClient(factory *client.SSEClientFactory) *reportsIdentityClient {
+func newReportsIdentityClient(ctx context.Context, factory *client.SSEClientFactory) *reportsIdentityClient {
 	apiEndpoint := factory.ApiEndpoint
 	if apiEndpoint == "" {
 		apiEndpoint = defaultSSEAPIEndpoint
@@ -35,7 +35,7 @@ func newReportsIdentityClient(factory *client.SSEClientFactory) *reportsIdentity
 		ClientSecret: factory.KeySecret,
 		TokenURL:     fmt.Sprintf("https://%s/auth/v2/token", apiEndpoint),
 	}
-	httpClient := tokenConfig.Client(context.Background())
+	httpClient := tokenConfig.Client(ctx)
 	httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}

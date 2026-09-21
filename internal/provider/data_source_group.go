@@ -67,7 +67,7 @@ func (d *groupDataSource) Configure(ctx context.Context, req datasource.Configur
 			fmt.Sprintf("expected *client.SSEClientFactory, got %T", req.ProviderData))
 		return
 	}
-	d.client = newReportsIdentityClient(factory)
+	d.client = newReportsIdentityClient(ctx, factory)
 }
 
 // Schema defines the schema for the data source.

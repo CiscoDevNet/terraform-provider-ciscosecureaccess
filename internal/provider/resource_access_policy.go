@@ -433,6 +433,8 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 	}
 	defer httpRes.Body.Close()
 
+	state.SourceAll = sourceAllState(readResp.RuleConditions)
+
 	// Parse rule conditions from API response
 	for _, condition := range readResp.RuleConditions {
 		switch {
@@ -470,10 +472,6 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 			}
 		case condition.AttributeName.AttributeNameSource != nil:
 			switch string(*condition.AttributeName.AttributeNameSource) {
-			case "umbrella.source.all":
-				if condition.AttributeValue.Bool != nil && *condition.AttributeValue.Bool {
-					state.SourceAll = types.BoolValue(true)
-				}
 			case "umbrella.source.identity_type_ids":
 				var typeNames []string
 				for _, typeId := range *condition.AttributeValue.ArrayOfInt64 {
@@ -526,6 +524,19 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 	// Set state to fully populated data
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 
+}
+
+func sourceAllState(conditions []rules.RuleConditionsInner) types.Bool {
+	for _, condition := range conditions {
+		if condition.AttributeName.AttributeNameSource == nil ||
+			string(*condition.AttributeName.AttributeNameSource) != "umbrella.source.all" {
+			continue
+		}
+		if condition.AttributeValue.Bool != nil && *condition.AttributeValue.Bool {
+			return types.BoolValue(true)
+		}
+	}
+	return types.BoolNull()
 }
 
 // Update updates the resource and sets the updated Terraform state on success.
