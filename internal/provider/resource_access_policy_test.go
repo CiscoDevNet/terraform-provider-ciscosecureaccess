@@ -5,15 +5,62 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
+	"github.com/CiscoDevNet/go-ciscosecureaccess/rules"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
+
+func TestBuildSourceConditionsAll(t *testing.T) {
+	plan := accessPolicyResourceModel{SourceAll: types.BoolValue(true)}
+
+	conditions := buildSourceConditions(context.Background(), &plan)
+	if len(conditions) != 1 {
+		t.Fatalf("expected one source condition, got %d", len(conditions))
+	}
+
+	condition := conditions[0]
+	if condition.AttributeName.AttributeNameSource == nil || string(*condition.AttributeName.AttributeNameSource) != "umbrella.source.all" {
+		t.Fatalf("unexpected source attribute: %#v", condition.AttributeName)
+	}
+	if condition.AttributeValue.Bool == nil || !*condition.AttributeValue.Bool {
+		t.Fatalf("expected source-all value true, got %#v", condition.AttributeValue)
+	}
+	if condition.GetAttributeOperator() != "=" {
+		t.Fatalf("expected '=' operator, got %q", condition.GetAttributeOperator())
+	}
+}
+
+func TestSourceAllState(t *testing.T) {
+	trueConditions := buildSourceConditions(context.Background(), &accessPolicyResourceModel{SourceAll: types.BoolValue(true)})
+	if got := sourceAllState(trueConditions); got.IsNull() || !got.ValueBool() {
+		t.Fatalf("expected source_all to be true, got %s", got.String())
+	}
+
+	falseCondition := rules.NewRuleConditionsInner()
+	attributeName := rules.AttributeNameSource("umbrella.source.all")
+	attributeValue := false
+	falseCondition.SetAttributeName(rules.AttributeName{AttributeNameSource: &attributeName})
+	falseCondition.SetAttributeValue(rules.AttributeValue{Bool: &attributeValue})
+
+	for name, conditions := range map[string][]rules.RuleConditionsInner{
+		"condition absent": nil,
+		"condition false":  {*falseCondition},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := sourceAllState(conditions); !got.IsNull() {
+				t.Fatalf("expected source_all to be null, got %s", got.String())
+			}
+		})
+	}
+}
 
 // Test constants for access policy tests
 const (

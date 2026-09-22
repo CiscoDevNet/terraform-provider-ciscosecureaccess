@@ -54,13 +54,15 @@ func TestGroupDataSource_basic(t *testing.T) {
 
 // testGroupFixture retrieves a sample group for testing
 func testGroupFixture(t *testing.T) (*reports.Identity, error) {
-	reportingClient := testClientFactory(t).GetReportsClient(context.Background())
+	reportingClient := newReportsIdentityClient(context.Background(), testClientFactory(t))
 
-	identities, httpResp, err := reportingClient.UtilityAPI.GetIdentities(context.Background()).
-		Limit(1).
-		Offset(0).
-		Identitytypes(testGroupIdentityType).
-		Execute()
+	identities, httpResp, err := reportingClient.getIdentities(
+		context.Background(),
+		1,
+		0,
+		"",
+		testGroupIdentityType,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get identities: %w", err)
 	}

@@ -18,3 +18,15 @@ resource "ciscosecureaccess_private_resource" "new_resource" {
 ...
 }
 
+# Allow every source to reach a private resource while applying the
+# organization's default client posture profile.
+resource "ciscosecureaccess_access_policy" "all_sources_with_posture" {
+  name                      = "all-sources-private-app"
+  action                    = "allow"
+  enabled                   = true
+  log_level                 = "LOG_ALL"
+  traffic_type              = "PRIVATE_NETWORK"
+  source_all                = true
+  private_resource_ids      = [ciscosecureaccess_private_resource.new_resource.id]
+  client_posture_profile_id = 0
+}

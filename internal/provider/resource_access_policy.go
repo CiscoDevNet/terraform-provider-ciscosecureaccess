@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
+	"github.com/hashicorp/terraform-plugin-framework-validators/boolvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -75,6 +76,7 @@ type accessPolicyResourceModel struct {
 	ClientPostureProfileId  types.Int64  `tfsdk:"client_posture_profile_id"`
 	SourceIds               types.Set    `tfsdk:"source_ids"`
 	SourceTypes             types.Set    `tfsdk:"source_types"`
+	SourceAll               types.Bool   `tfsdk:"source_all"`
 	PrivateDestinationTypes types.Set    `tfsdk:"private_destination_types"`
 	PublicDestinationTypes  types.Set    `tfsdk:"public_destination_types"`
 	TrafficType             types.String `tfsdk:"traffic_type"`
@@ -236,6 +238,10 @@ func (r *accessPolicyResource) Schema(_ context.Context, _ resource.SchemaReques
 				Description: "Source Secure Access IDs of matching resource",
 				ElementType: types.Int64Type,
 				Optional:    true,
+				Validators: []validator.Set{
+					setvalidator.AtLeastOneOf(path.MatchRoot("source_all"), path.MatchRoot("source_types"), path.MatchRoot("source_ids")),
+					setvalidator.ConflictsWith(path.MatchRoot("source_all")),
+				},
 			},
 			"source_types": schema.SetAttribute{
 				Description: "Wildcard source types allowing access to resource (eg. [\"directory_users\", \"networks\"])",
@@ -243,7 +249,17 @@ func (r *accessPolicyResource) Schema(_ context.Context, _ resource.SchemaReques
 				Optional:    true,
 				Validators: []validator.Set{
 					setvalidator.ValueStringsAre(stringvalidator.OneOf(accessPolicyResourceModel{}.ValidSourceTypes()...)),
-					setvalidator.AtLeastOneOf(path.MatchRoot("source_types"), path.MatchRoot("source_ids")),
+					setvalidator.AtLeastOneOf(path.MatchRoot("source_all"), path.MatchRoot("source_types"), path.MatchRoot("source_ids")),
+					setvalidator.ConflictsWith(path.MatchRoot("source_all")),
+				},
+			},
+			"source_all": schema.BoolAttribute{
+				Description: "Whether all source components match this access policy. Set to true instead of source_ids or source_types.",
+				Optional:    true,
+				Validators: []validator.Bool{
+					boolvalidator.Equals(true),
+					boolvalidator.AtLeastOneOf(path.MatchRoot("source_all"), path.MatchRoot("source_types"), path.MatchRoot("source_ids")),
+					boolvalidator.ConflictsWith(path.MatchRoot("source_types"), path.MatchRoot("source_ids")),
 				},
 			},
 			"private_destination_types": schema.SetAttribute{
@@ -297,8 +313,8 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 						return fmt.Errorf("retryable error: %v - %s", err, bodyStr)
 					}
 
-				// Non-retryable errors
-				tflog.Error(ctx, "Error creating access policy", map[string]interface{}{"http_status": httpRes.Status, "body": bodyStr})
+					// Non-retryable errors
+					tflog.Error(ctx, "Error creating access policy", map[string]interface{}{"http_status": httpRes.Status, "body": bodyStr})
 					resp.Diagnostics.AddError("Error creating access policy", fmt.Sprintf("HTTP %s: %s", httpRes.Status, bodyStr))
 					return retry.Unrecoverable(err)
 				}
@@ -310,9 +326,9 @@ func (r *accessPolicyResource) Create(ctx context.Context, req resource.CreateRe
 				httpRes.Body.Close()
 			}
 
-		if respBytes, err := json.Marshal(createResp); err == nil {
-			tflog.Debug(ctx, "Created access policy", map[string]interface{}{"response": string(respBytes)})
-		}
+			if respBytes, err := json.Marshal(createResp); err == nil {
+				tflog.Debug(ctx, "Created access policy", map[string]interface{}{"response": string(respBytes)})
+			}
 
 			plan.Priority = types.Int64Value(createResp.GetRulePriority())
 			plan.ID = types.Int64Value(createResp.GetRuleId())
@@ -417,6 +433,8 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 	}
 	defer httpRes.Body.Close()
 
+	state.SourceAll = sourceAllState(readResp.RuleConditions)
+
 	// Parse rule conditions from API response
 	for _, condition := range readResp.RuleConditions {
 		switch {
@@ -506,6 +524,19 @@ func (r *accessPolicyResource) Read(ctx context.Context, req resource.ReadReques
 	// Set state to fully populated data
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 
+}
+
+func sourceAllState(conditions []rules.RuleConditionsInner) types.Bool {
+	for _, condition := range conditions {
+		if condition.AttributeName.AttributeNameSource == nil ||
+			string(*condition.AttributeName.AttributeNameSource) != "umbrella.source.all" {
+			continue
+		}
+		if condition.AttributeValue.Bool != nil && *condition.AttributeValue.Bool {
+			return types.BoolValue(true)
+		}
+	}
+	return types.BoolNull()
 }
 
 // Update updates the resource and sets the updated Terraform state on success.
@@ -604,6 +635,17 @@ func (r *accessPolicyResource) Delete(ctx context.Context, req resource.DeleteRe
 
 func buildSourceConditions(ctx context.Context, plan *accessPolicyResourceModel) []rules.RuleConditionsInner {
 	var conditions []rules.RuleConditionsInner
+
+	// All sources condition
+	if !plan.SourceAll.IsNull() && plan.SourceAll.ValueBool() {
+		condition := rules.NewRuleConditionsInner()
+		ruleName := rules.AttributeNameSource("umbrella.source.all")
+		allSources := true
+		condition.SetAttributeName(rules.AttributeName{AttributeNameSource: &ruleName})
+		condition.SetAttributeValue(rules.BoolAsAttributeValue(&allSources))
+		condition.SetAttributeOperator("=")
+		return []rules.RuleConditionsInner{*condition}
+	}
 
 	// Source IDs condition
 	var sourceIds []int64
@@ -762,6 +804,7 @@ func hasChanges(plan, state *accessPolicyResourceModel) bool {
 		!plan.Priority.Equal(state.Priority) ||
 		!plan.SourceIds.Equal(state.SourceIds) ||
 		!plan.SourceTypes.Equal(state.SourceTypes) ||
+		!plan.SourceAll.Equal(state.SourceAll) ||
 		!plan.PrivateDestinationTypes.Equal(state.PrivateDestinationTypes) ||
 		!plan.PublicDestinationTypes.Equal(state.PublicDestinationTypes) ||
 		!plan.PrivateResourceIds.Equal(state.PrivateResourceIds) ||

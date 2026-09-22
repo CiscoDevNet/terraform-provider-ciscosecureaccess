@@ -7,8 +7,10 @@ package provider
 import (
 	"context"
 	"os"
+	"sync"
 
 	"github.com/CiscoDevNet/go-ciscosecureaccess/client"
+	"github.com/CiscoDevNet/go-ciscosecureaccess/resconn"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -25,7 +27,8 @@ const (
 )
 
 var (
-	_ provider.Provider = &ciscosecureaccessProvider{}
+	_                    provider.Provider = &ciscosecureaccessProvider{}
+	sdkCompatibilityOnce sync.Once
 )
 
 type ciscosecureaccessProvider struct {
@@ -147,6 +150,13 @@ func (p *ciscosecureaccessProvider) Configure(ctx context.Context, req provider.
 	tflog.Debug(ctx, "Creating Cisco Secure Access client")
 
 	// Initialize client factory
+	sdkCompatibilityOnce.Do(func() {
+		containerEnvironment := resconn.Environment("container")
+		if !containerEnvironment.IsValid() {
+			resconn.AllowedEnvironmentEnumValues = append(resconn.AllowedEnvironmentEnumValues, containerEnvironment)
+		}
+	})
+
 	p.clientFactory = &client.SSEClientFactory{
 		KeyId:       keyID,
 		KeySecret:   keySecret,
@@ -212,6 +222,7 @@ func (p *ciscosecureaccessProvider) Resources(_ context.Context) []func() resour
 		NewNetworkTunnelGroupResource,
 		NewGlobalSettingsResource,
 		NewPrivateResourceResource,
+		NewConnectorGroupResourceMappingsResource,
 		NewResourceConnectorAgentResource,
 		NewSiteResource,
 	}
